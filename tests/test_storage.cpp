@@ -36,6 +36,7 @@ int main() {
 
         RunRecord run;
         run.seed = 42;
+        run.seed_source = "originqc";
         run.model_path = "models/Spark-X2.5-4B-Q4_K_M.gguf";
         run.quant = "Q4_K_M";
         run.n_ctx = 512;
@@ -81,6 +82,28 @@ int main() {
         store.add_benchmark_result(benchmark_id, run_id, 0,
                                    "tokens_per_second", 12.5);
 
+        QuantumJobRecord quantum;
+        quantum.platform_job_id = "test-originqc-job";
+        quantum.backend = "WK_C180";
+        quantum.programs = 2;
+        quantum.shots_per_program = 10;
+        quantum.status = "FINISHED";
+        quantum.counts_json = R"({"0":8,"1":12})";
+        quantum.probs_json = R"([{"0":0.4,"1":0.6},{"0":0.6,"1":0.4}])";
+        quantum.qpu_runtime_ms = 47.0;
+        quantum.derived_seed = 12345;
+        quantum.run_id = run_id;
+        const std::int64_t quantum_job_id =
+            store.record_quantum_job(quantum);
+        CHECK(quantum_job_id > 0, "创建 quantum job");
+
+        QuantumSampleRecord sample;
+        sample.quantum_job_id = quantum_job_id;
+        sample.program_index = 0;
+        sample.bitstring = "0";
+        sample.count = 4;
+        store.add_quantum_sample(sample);
+
         CHECK(store.scalar("SELECT COUNT(*) FROM runs WHERE run_id=$1::bigint",
                            {std::to_string(run_id)}) == 1, "run 可查询");
         CHECK(store.scalar("SELECT COUNT(*) FROM agents WHERE run_id=$1::bigint",
@@ -92,12 +115,24 @@ int main() {
         CHECK(store.scalar(
                   "SELECT COUNT(*) FROM benchmark_results WHERE benchmark_id=$1::bigint",
                   {std::to_string(benchmark_id)}) == 1, "benchmark result 可查询");
+        CHECK(store.scalar(
+                  "SELECT COUNT(*) FROM quantum_jobs WHERE quantum_job_id=$1::bigint",
+                  {std::to_string(quantum_job_id)}) == 1, "quantum job 可查询");
+        CHECK(store.scalar(
+                  "SELECT COUNT(*) FROM quantum_samples WHERE quantum_job_id=$1::bigint",
+                  {std::to_string(quantum_job_id)}) == 1, "quantum sample 可查询");
+        CHECK(store.scalar(
+                  "SELECT COUNT(*) FROM runs WHERE run_id=$1::bigint "
+                  "AND seed_source='originqc'",
+                  {std::to_string(run_id)}) == 1, "run seed_source 可查询");
 
         store.finish_run(run_id, "completed");
 
         // 清理测试数据（级联删除 agent/round/event/metric/result）
         store.execute("DELETE FROM benchmarks WHERE benchmark_id=$1::bigint",
                       {std::to_string(benchmark_id)});
+        store.execute("DELETE FROM quantum_jobs WHERE quantum_job_id=$1::bigint",
+                      {std::to_string(quantum_job_id)});
         store.execute("DELETE FROM runs WHERE run_id=$1::bigint",
                       {std::to_string(run_id)});
 

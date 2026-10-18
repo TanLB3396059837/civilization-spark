@@ -84,6 +84,8 @@ Simulation::Simulation(std::uint64_t seed) {
 
                 RunRecord run;
                 run.seed = seed;
+                if (const char* source = std::getenv("CIV_SEED_SOURCE"))
+                    run.seed_source = source;
                 run.model_path = model_path ? model_path : "";
                 if (const char* sha = std::getenv("CIV_MODEL_SHA256"))
                     run.model_sha256 = sha;

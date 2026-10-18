@@ -24,8 +24,12 @@ export CIV_PG_DSN="host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass
 | `metrics` | 效率、帧数、帧字节数等数值指标 |
 | `benchmarks` | benchmark 配置 |
 | `benchmark_results` | 每次 benchmark 的 wall_ms、survivors 等结果 |
+| `quantum_jobs` | 量子平台 job、backend、shots、QPU 时间、派生 seed、关联 run |
+| `quantum_samples` | 每个程序每个 bitstring 的 counts |
 
 Schema 由 `PostgresStore::migrate()` 幂等创建，不需要手动执行 SQL。
+
+`runs.seed_source` 用于标记 seed 来源，例如 `classical` 或 `originqc`。
 
 ## 3. 本地 Windows 启动
 
@@ -103,3 +107,48 @@ bash scripts/linux_oneclick.sh --no-model --no-postgres
 本机 Ubuntu VM 已启动，IP 为 `192.168.30.133`，SSH 22 端口开放，但当前没有
 guest 用户名/密码，无法自动登录安装 PostgreSQL。提供 guest 凭据后，可在 VM 内执行
 同一 `linux_oneclick.sh`，并用虚拟机 IP 作为第二节点做远程写入/复制测试。
+
+## 8. 量子结果入库
+
+`originqc_batch.py` 生成 JSON 后，可用 `pg_import_quantum.py` 导入：
+
+```bash
+export CIV_PG_DSN="host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass"
+python scripts/pg_import_quantum.py \
+  --json originqc_batch_raw.json --run-id 31
+```
+
+导入后会写入：
+
+```text
+quantum_jobs       一条 job 记录
+quantum_samples    每个 program 的 bitstring/count
+runs.seed_source   originqc
+```
+
+当前验证数据：
+
+```text
+platform_job_id: 6A1711B89D72896ABE4357FD048C41C4
+backend:         WK_C180
+programs:        16
+shots/program:   10
+total_counts:    79 zeros / 81 ones
+derived_seed:    7264055436326997056
+run_id:          31
+```
+
+查询：
+
+```sql
+SELECT q.platform_job_id, q.backend, q.programs, q.shots_per_program,
+       q.qpu_runtime_ms, q.derived_seed, r.run_id, r.seed_source
+FROM quantum_jobs q
+LEFT JOIN runs r USING (run_id)
+ORDER BY q.quantum_job_id DESC;
+
+SELECT program_index, bitstring, count
+FROM quantum_samples
+WHERE quantum_job_id = 2
+ORDER BY program_index, bitstring;
+```

@@ -214,5 +214,13 @@ derived_seed: 7264055436326997056
 
 该 seed 已用于 `civ_main`，PostgreSQL `run_id=31`，13 因子 GPU 模拟完成。
 
+导入数据库：
+
+```bash
+export CIV_PG_DSN="host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass"
+python scripts/pg_import_quantum.py \
+  --json originqc_batch_raw.json --run-id 31
+```
+
 如果加 `--amend`，平台会做读取误差缓解，概率变成校准值（例如
 `0.6479177`），不再是整数 counts；适合做误差缓解实验，不适合直接当原始 bit。

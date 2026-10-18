@@ -13,6 +13,7 @@ R"SQL(
 CREATE TABLE IF NOT EXISTS runs (
     run_id        BIGSERIAL PRIMARY KEY,
     seed          BIGINT NOT NULL,
+    seed_source   TEXT NOT NULL DEFAULT 'classical',
     model_path    TEXT,
     model_sha256  CHAR(64),
     quant         TEXT,
@@ -25,6 +26,9 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     finished_at   TIMESTAMPTZ
 )
+)SQL",
+R"SQL(
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS seed_source TEXT NOT NULL DEFAULT 'classical'
 )SQL",
 R"SQL(
 CREATE TABLE IF NOT EXISTS agents (
@@ -107,6 +111,43 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
 R"SQL(
 CREATE INDEX IF NOT EXISTS benchmark_results_benchmark_idx
     ON benchmark_results (benchmark_id, metric)
+)SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS quantum_jobs (
+    quantum_job_id    BIGSERIAL PRIMARY KEY,
+    platform          TEXT NOT NULL DEFAULT 'originqc',
+    platform_job_id   TEXT NOT NULL,
+    backend           TEXT NOT NULL,
+    programs          INTEGER NOT NULL DEFAULT 1,
+    shots_per_program INTEGER NOT NULL DEFAULT 10,
+    status            TEXT,
+    counts            JSONB NOT NULL DEFAULT '{}'::jsonb,
+    probs             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    qpu_runtime_ms    DOUBLE PRECISION,
+    derived_seed      BIGINT,
+    run_id            BIGINT REFERENCES runs(run_id) ON DELETE SET NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (platform, platform_job_id)
+)
+)SQL",
+R"SQL(
+CREATE INDEX IF NOT EXISTS quantum_jobs_run_idx
+    ON quantum_jobs (run_id, quantum_job_id)
+)SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS quantum_samples (
+    sample_id      BIGSERIAL PRIMARY KEY,
+    quantum_job_id BIGINT NOT NULL REFERENCES quantum_jobs(quantum_job_id) ON DELETE CASCADE,
+    program_index  INTEGER NOT NULL,
+    bitstring      TEXT NOT NULL,
+    count          INTEGER NOT NULL,
+    UNIQUE (quantum_job_id, program_index, bitstring)
+)
+)SQL",
+R"SQL(
+CREATE INDEX IF NOT EXISTS quantum_samples_job_idx
+    ON quantum_samples (quantum_job_id, program_index)
 )SQL",
 };
 
@@ -203,11 +244,12 @@ void PostgresStore::exec_command(const std::string& sql,
 std::int64_t PostgresStore::create_run(const RunRecord& run) {
     return exec_id(
         "INSERT INTO runs "
-        "(seed, model_path, model_sha256, quant, n_ctx, n_gpu_layers, config, git_commit) "
-        "VALUES ($1::bigint, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), "
-        "$5::int, $6::int, $7::jsonb, NULLIF($8,'')) RETURNING run_id",
-        {std::to_string(run.seed), run.model_path, run.model_sha256,
-         run.quant, std::to_string(run.n_ctx),
+        "(seed, seed_source, model_path, model_sha256, quant, n_ctx, "
+        " n_gpu_layers, config, git_commit) "
+        "VALUES ($1::bigint, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), "
+        "$6::int, $7::int, $8::jsonb, NULLIF($9,'')) RETURNING run_id",
+        {std::to_string(run.seed), run.seed_source, run.model_path,
+         run.model_sha256, run.quant, std::to_string(run.n_ctx),
          std::to_string(run.n_gpu_layers), run.config_json, run.git_commit});
 }
 
@@ -271,6 +313,41 @@ void PostgresStore::log_metric(const MetricRecord& metric) {
         {std::to_string(metric.run_id), std::to_string(metric.round_no),
          std::to_string(metric.agent_index), metric.name,
          std::to_string(metric.value), metric.unit, metric.extra_json});
+}
+
+std::int64_t PostgresStore::record_quantum_job(const QuantumJobRecord& job) {
+    return exec_id(
+        "INSERT INTO quantum_jobs "
+        "(platform, platform_job_id, backend, programs, shots_per_program, "
+        " status, counts, probs, qpu_runtime_ms, derived_seed, run_id) "
+        "VALUES ($1, $2, $3, $4::int, $5::int, $6, $7::jsonb, $8::jsonb, "
+        "$9::double precision, NULLIF($10::bigint,0), NULLIF($11::bigint,-1)) "
+        "ON CONFLICT (platform, platform_job_id) DO UPDATE SET "
+        "backend=EXCLUDED.backend, programs=EXCLUDED.programs, "
+        "shots_per_program=EXCLUDED.shots_per_program, "
+        "status=EXCLUDED.status, counts=EXCLUDED.counts, "
+        "probs=EXCLUDED.probs, qpu_runtime_ms=EXCLUDED.qpu_runtime_ms, "
+        "derived_seed=EXCLUDED.derived_seed, "
+        "run_id=COALESCE(EXCLUDED.run_id, quantum_jobs.run_id), "
+        "updated_at=now() "
+        "RETURNING quantum_job_id",
+        {job.platform, job.platform_job_id, job.backend,
+         std::to_string(job.programs), std::to_string(job.shots_per_program),
+         job.status, job.counts_json, job.probs_json,
+         std::to_string(job.qpu_runtime_ms),
+         std::to_string(job.derived_seed), std::to_string(job.run_id)});
+}
+
+void PostgresStore::add_quantum_sample(const QuantumSampleRecord& sample) {
+    exec_command(
+        "INSERT INTO quantum_samples "
+        "(quantum_job_id, program_index, bitstring, count) "
+        "VALUES ($1::bigint, $2::int, $3, $4::int) "
+        "ON CONFLICT (quantum_job_id, program_index, bitstring) "
+        "DO UPDATE SET count=EXCLUDED.count",
+        {std::to_string(sample.quantum_job_id),
+         std::to_string(sample.program_index), sample.bitstring,
+         std::to_string(sample.count)});
 }
 
 std::int64_t PostgresStore::create_benchmark(const std::string& name,

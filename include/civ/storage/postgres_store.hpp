@@ -8,6 +8,7 @@ namespace civ {
 
 struct RunRecord {
     std::uint64_t seed = 0;
+    std::string   seed_source = "classical";
     std::string   model_path;
     std::string   model_sha256;
     std::string   quant;
@@ -46,6 +47,27 @@ struct MetricRecord {
     std::string  extra_json = "{}";
 };
 
+struct QuantumJobRecord {
+    std::string  platform = "originqc";
+    std::string  platform_job_id;
+    std::string  backend;
+    int          programs = 1;
+    int          shots_per_program = 10;
+    std::string  status;
+    std::string  counts_json = "{}";
+    std::string  probs_json = "{}";
+    double       qpu_runtime_ms = 0.0;
+    std::uint64_t derived_seed = 0;
+    std::int64_t run_id = -1;
+};
+
+struct QuantumSampleRecord {
+    std::int64_t quantum_job_id = -1;
+    int          program_index = 0;
+    std::string  bitstring;
+    int          count = 0;
+};
+
 // 一条 libpq 连接。非线程安全：每个线程使用独立实例。
 class PostgresStore {
 public:
@@ -72,6 +94,9 @@ public:
 
     void log_event(const EventRecord& event);
     void log_metric(const MetricRecord& metric);
+
+    std::int64_t record_quantum_job(const QuantumJobRecord& job);
+    void add_quantum_sample(const QuantumSampleRecord& sample);
 
     std::int64_t create_benchmark(const std::string& name,
                                   const std::string& config_json);
