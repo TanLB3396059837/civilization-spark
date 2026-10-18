@@ -35,6 +35,8 @@ __pycache__/
 .venv/
 .venv*/
 /quantum_entropy.bin
+/originqc_batch.json
+/originqc_batch_*.json
 
 # Local PostgreSQL data
 /pgdata/

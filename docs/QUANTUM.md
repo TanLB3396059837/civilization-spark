@@ -180,3 +180,39 @@ python scripts/originqc_probe.py --backend WK_C180 --shots 100
 注意：当前接口返回的是概率；`get_counts()` 为空，`prob_count_raw` 未返回。
 因此本次硬件结果用于验证真机链路和派生可复现 seed，不应直接当作密码学 QRNG。
 用该次硬件结果派生 seed `1172716508096753925`，`civ_main` 已完成 13 因子 GPU 模拟。
+
+## 批量单比特实测
+
+批量任务的最小 shots 是 **10**，`shots=1` 会失败：
+
+```text
+field 'shot' has over the range: [10, 49600]
+```
+
+批量提交使用 `scripts/originqc_batch.py`。关闭读取误差缓解时，返回概率是
+`1/shots` 的整数倍，可以还原为原始 counts：
+
+```bash
+export ORIGIN_API_KEY="你的 key"
+
+python scripts/originqc_batch.py \
+  --backend WK_C180 --programs 16 --shots 10 \
+  --output originqc_batch_raw.json
+```
+
+本次成功任务：
+
+```text
+job_id: 6A1711B89D72896ABE4357FD048C41C4
+programs: 16
+shots/program: 10
+total_counts: {"0": 79, "1": 81}
+shot_ones_ratio: 0.50625
+majority_bits: 1011011001100100
+derived_seed: 7264055436326997056
+```
+
+该 seed 已用于 `civ_main`，PostgreSQL `run_id=31`，13 因子 GPU 模拟完成。
+
+如果加 `--amend`，平台会做读取误差缓解，概率变成校准值（例如
+`0.6479177`），不再是整数 counts；适合做误差缓解实验，不适合直接当原始 bit。
