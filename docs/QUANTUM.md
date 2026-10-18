@@ -127,3 +127,17 @@ QuantumRNG::mix_entropy(batch)
 - 云量子真机通常有免费额度、排队和 shots 限制。
 - 不要把云 token 写入仓库或日志。
 - 量子随机数不等于密码学安全的密钥；生产密钥仍需 CSPRNG/KDF 和密钥管理。
+
+## 本机 Aer 验证结果
+
+本项目已在本地用 `qiskit 2.6.0` + `qiskit-aer 0.17.2` 跑过：
+
+```text
+shots=4096
+bytes=512
+ones_ratio=0.4961
+seed=1575472452266220787
+```
+
+使用该 seed 运行 `civ_main` 成功完成了 13 因子模拟。注意：这是量子电路**模拟器**结果，
+不是云真机结果。

@@ -19,7 +19,9 @@ int main(int argc, char* argv[]) {
     }
 
     std::uint64_t seed = 42;
-    if (argc >= 2) seed = static_cast<std::uint64_t>(std::atoll(argv[1]));
+    if (argc >= 2)
+        seed = static_cast<std::uint64_t>(
+            std::strtoull(argv[1], nullptr, 10));
 
     std::srand(static_cast<unsigned>(seed));
 

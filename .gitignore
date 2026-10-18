@@ -33,6 +33,8 @@ Thumbs.db
 __pycache__/
 *.pyc
 .venv/
+.venv*/
+/quantum_entropy.bin
 
 # Local PostgreSQL data
 /pgdata/

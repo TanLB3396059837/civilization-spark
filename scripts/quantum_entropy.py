@@ -80,7 +80,8 @@ def main():
 
     ones = sum(b.bit_count() for b in data)
     total = len(data) * 8
-    seed = int.from_bytes(data[:8].ljust(8, b"\0"), "big")
+    # Keep the CLI seed in the signed 63-bit range for portable parsers.
+    seed = int.from_bytes(data[:8].ljust(8, b"\0"), "big") & 0x7FFFFFFFFFFFFFFF
     print(f"backend={args.backend} shots={len(bitstrings)} bytes={len(data)}")
     print(f"ones_ratio={ones / total:.4f} seed={seed}")
     print(f"written={args.output}")
