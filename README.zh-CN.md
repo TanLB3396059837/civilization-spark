@@ -210,9 +210,9 @@ third_party/       llama.cpp submodule
 - [项目分析与修复报告](docs/分析与修复报告.md)
 - [PostgreSQL 持久化与多节点](docs/POSTGRES.md)
 - [基准测试](docs/BENCHMARKS.md)
-- [贡献指南](CONTRIBUTING.md)
+- [贡献指南](CONTRIBUTING.zh-CN.md) · [English](CONTRIBUTING.md) · [Русский](CONTRIBUTING.ru.md)
 - [安全策略](SECURITY.md)
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT 许可证。见 [LICENSE](LICENSE) · [简体中文](LICENSE.zh-CN.md) · [Русский](LICENSE.ru.md)。

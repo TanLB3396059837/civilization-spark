@@ -1,16 +1,18 @@
 # Contributing
 
-感谢你参与 Civilization Spark。
+[English](CONTRIBUTING.md) · [简体中文](CONTRIBUTING.zh-CN.md) · [Русский](CONTRIBUTING.ru.md)
 
-## 开发环境
+Thank you for contributing to Civilization Spark.
 
-- C++23 编译器（MSVC 2022/2026 或 GCC/Clang）
+## Development environment
+
+- C++23 compiler (MSVC 2022/2026, GCC, or Clang)
 - CMake 3.25+
 - Ninja
-- 可选：CUDA 12.x、PostgreSQL 18 + libpq
-- 模型文件不进入仓库，请按 README 下载
+- Optional: CUDA 12.x, PostgreSQL 18 + libpq
+- Model files are not committed; download them as described in the README
 
-## 本地检查
+## Local checks
 
 ```bash
 cmake --preset cpu-release
@@ -18,7 +20,7 @@ cmake --build --preset cpu-release
 ctest --test-dir build/cpu-release --output-on-failure
 ```
 
-有 GPU 时：
+With a GPU:
 
 ```bash
 cmake --preset cuda-release
@@ -26,15 +28,15 @@ cmake --build --preset cuda-release
 ctest --test-dir build/cuda-release --output-on-failure
 ```
 
-## 提交规范
+## Pull request guidelines
 
-- 一个 PR 聚焦一个主题。
-- 不要提交 `models/*.gguf`、`build/`、`cmake-build-*` 或日志文件。
-- 新功能请补测试；修复 bug 请说明复现步骤。
-- 提交前至少跑一遍 CPU 测试；涉及 CUDA 时同时跑 `civ_cuda_tests`。
+- Keep one PR focused on one topic.
+- Do not commit `models/*.gguf`, `build/`, `cmake-build-*`, or log files.
+- Add tests for new behavior; describe reproduction steps for bug fixes.
+- Run the CPU tests before submitting; run `civ_cuda_tests` when CUDA is affected.
 
-## 代码风格
+## Code style
 
-- 4 空格缩进，列宽 100。
-- 公共接口放在 `include/civ/`，实现放在 `src/`。
-- 错误处理优先使用异常或返回错误对象，避免静默失败。
+- 4-space indentation, 100-column line width.
+- Public interfaces go in `include/civ/`; implementations go in `src/`.
+- Prefer exceptions or explicit error objects over silent failures.
