@@ -129,7 +129,7 @@ Bytes ShmChannel::recv() {
 
 void ShmChannel::close() noexcept {
     if (ptr_) { munmap(ptr_, size_); ptr_ = nullptr; }
-    if (fd_ >= 0) { close(fd_); fd_ = -1; }
+    if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
     // 只有创建者负责删除共享内存对象；客户端 unlink 会让服务端后续重连失败。
     if (creator_) shm_unlink(name_.c_str());
 }
