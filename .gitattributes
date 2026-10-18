@@ -1,0 +1,18 @@
+* text=auto
+
+*.c    text eol=lf
+*.cc   text eol=lf
+*.cpp  text eol=lf
+*.cu   text eol=lf
+*.cuh  text eol=lf
+*.h    text eol=lf
+*.hpp  text eol=lf
+*.md   text eol=lf
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+
+*.gguf binary
+*.png  binary
+*.jpg  binary
+*.svg  text

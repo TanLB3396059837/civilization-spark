@@ -1,0 +1,33 @@
+# Build output
+/build/
+/build-*/
+/cmake-build-*/
+/out/
+
+# IDE / local settings
+/.idea/
+/.vscode/
+*.user
+*.suo
+*.VC.db
+
+# Models and large binaries (download separately)
+/models/*.gguf
+/models/*.bin
+/models/*.tmp
+
+# Logs and local diagnostics
+*.log
+*.tmp
+*.dump
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local environment / secrets
+.env
+.env.*
+
+# Local PostgreSQL data
+/pgdata/

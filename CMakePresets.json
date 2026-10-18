@@ -1,0 +1,76 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "cpu-release",
+      "displayName": "CPU Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cpu-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CIV_ENABLE_CUDA": "OFF",
+        "CIV_ENABLE_POSTGRES": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "cpu-debug",
+      "displayName": "CPU Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cpu-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CIV_ENABLE_CUDA": "OFF",
+        "CIV_ENABLE_POSTGRES": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "cuda-release",
+      "displayName": "CUDA Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/cuda-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CIV_ENABLE_CUDA": "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CIV_ENABLE_POSTGRES": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "minimal-cpu",
+      "displayName": "Minimal CPU (no CUDA/PostgreSQL)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/minimal-cpu",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CIV_ENABLE_CUDA": "OFF",
+        "CIV_ENABLE_POSTGRES": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "cpu-release", "configurePreset": "cpu-release" },
+    { "name": "cpu-debug", "configurePreset": "cpu-debug" },
+    { "name": "cuda-release", "configurePreset": "cuda-release" },
+    { "name": "minimal-cpu", "configurePreset": "minimal-cpu" }
+  ],
+  "testPresets": [
+    {
+      "name": "cpu-release",
+      "configurePreset": "cpu-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "cuda-release",
+      "configurePreset": "cuda-release",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

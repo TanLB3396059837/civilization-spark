@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-cpu:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: civ
+          POSTGRES_PASSWORD: civpass
+          POSTGRES_DB: civ
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U civ -d civ"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libpq-dev
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCIV_ENABLE_CUDA=OFF \
+            -DCIV_ENABLE_POSTGRES=ON
+
+      - name: Build
+        run: cmake --build build --parallel 4
+
+      - name: Test
+        env:
+          CIV_TEST_PG_DSN: "host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass"
+        run: ctest --test-dir build --output-on-failure
