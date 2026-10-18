@@ -210,6 +210,8 @@ third_party/       llama.cpp submodule
 - [项目分析与修复报告](docs/分析与修复报告.md)
 - [PostgreSQL 持久化与多节点](docs/POSTGRES.md)
 - [基准测试](docs/BENCHMARKS.md)
+- [量子计算机测试](docs/QUANTUM.md)
+- [RoCEv2 测试](docs/RDMA.md)
 - [贡献指南](CONTRIBUTING.zh-CN.md) · [English](CONTRIBUTING.md) · [Русский](CONTRIBUTING.ru.md)
 - [安全策略](SECURITY.md)
 

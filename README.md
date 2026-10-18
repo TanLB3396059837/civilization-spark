@@ -222,6 +222,8 @@ third_party/       llama.cpp submodule
 - [Project analysis and fix report (Chinese)](docs/分析与修复报告.md)
 - [PostgreSQL persistence and multi-node setup](docs/POSTGRES.md)
 - [Benchmarks](docs/BENCHMARKS.md)
+- [Quantum computer testing (Chinese)](docs/QUANTUM.md)
+- [RoCEv2 testing (Chinese)](docs/RDMA.md)
 - [Contributing](CONTRIBUTING.md) · [简体中文](CONTRIBUTING.zh-CN.md) · [Русский](CONTRIBUTING.ru.md)
 - [Security policy](SECURITY.md)
 

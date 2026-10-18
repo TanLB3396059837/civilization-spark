@@ -206,6 +206,8 @@ third_party/       submodule llama.cpp
 - [Анализ проекта и отчёт об исправлениях (китайский)](docs/分析与修复报告.md)
 - [PostgreSQL и многоузловая настройка](docs/POSTGRES.md)
 - [Бенчмарки](docs/BENCHMARKS.md)
+- [Тестирование на квантовом компьютере (китайский)](docs/QUANTUM.md)
+- [Тестирование RoCEv2 (китайский)](docs/RDMA.md)
 - [Участие в разработке](CONTRIBUTING.ru.md) · [English](CONTRIBUTING.md) · [简体中文](CONTRIBUTING.zh-CN.md)
 - [Политика безопасности](SECURITY.md)
 

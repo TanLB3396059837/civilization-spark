@@ -29,5 +29,10 @@ Thumbs.db
 .env
 .env.*
 
+# Python
+__pycache__/
+*.pyc
+.venv/
+
 # Local PostgreSQL data
 /pgdata/
