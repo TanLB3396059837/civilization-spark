@@ -148,4 +148,35 @@ seed=1575472452266220787
 - 本源量子云主页可以访问，但“本源悟空”真机和在线编程工作台需要登录账号。
 - IBM Quantum 需要 IBM 账号和 API token。
 
-因此本机当前完成的是 **Qiskit Aer 量子电路模拟**；云真机提交需要用户账号或 token。
+其中 qBraid 和 IBM Quantum 仍需要账号/token；本源量子云已用 API key 完成真机测试，
+结果见下一节。
+
+## 本源量子云实测
+
+拿到 API key 后，使用 `pyqpanda3.qcloud` 成功列出后端：
+
+```text
+{'HanYuan_01': False, 'PQPUMESH8': True, 'WK_C180': True,
+ 'WK_C180_2': True, 'WK_C180_3': True, 'full_amplitude': True,
+ 'partial_amplitude': True, 'single_amplitude': True}
+```
+
+测试命令：
+
+```bash
+export ORIGIN_API_KEY="你的 key"
+python scripts/originqc_probe.py --list
+python scripts/originqc_probe.py --backend full_amplitude --shots 1024
+python scripts/originqc_probe.py --backend WK_C180 --shots 100
+```
+
+实测结果：
+
+| 后端 | Job ID | Shots | 结果 |
+| --- | --- | --- | --- |
+| `full_amplitude` | `C2676C4E365927D098F20B3978151332` | 1024 | 0/1 概率约 `0.5049 / 0.4951` |
+| `WK_C180`（本源悟空真机） | `F4D64E71FC7694621E21434BA301FAAA` | 100 | 0/1 概率约 `0.4568 / 0.5432`，QPU 运行 47 ms |
+
+注意：当前接口返回的是概率；`get_counts()` 为空，`prob_count_raw` 未返回。
+因此本次硬件结果用于验证真机链路和派生可复现 seed，不应直接当作密码学 QRNG。
+用该次硬件结果派生 seed `1172716508096753925`，`civ_main` 已完成 13 因子 GPU 模拟。
