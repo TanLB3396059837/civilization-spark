@@ -16,6 +16,29 @@
 注意：门模型量子计算机是单方计算设备，**不能单独完成 BB84 这类双方 QKD**。QKD 需要
 两端之间的量子信道和专用光子设备；云量子计算机只能提供量子随机数或量子算法实验。
 
+## 云量子平台候选
+
+| 平台 | 硬件/能力 | 接入方式 | 适合场景 |
+| --- | --- | --- | --- |
+| [本源量子云](https://qcloud.originqc.com.cn/) | “本源悟空”180 比特超导真机 + 4 类模拟器 | 中文网页、QPanda3、MCP | 国内访问、真机随机数、QPanda 生态 |
+| [qBraid](https://www.qbraid.com/) | 20+ QPU、11 家提供商、云 IDE | 免费计划、统一 SDK、Qiskit/Braket/Cirq | 想快速比较多个真机，不想分别注册平台 |
+| [IBM Quantum](https://quantum.ibm.com/) | IBM 超导真机 | Qiskit Runtime、Open Plan 免费额度 | 最成熟的 Qiskit 工作流、H+measure 随机数 |
+| [Amazon Braket](https://aws.amazon.com/braket/) | IonQ、Rigetti、IQM、QuEra 等 | AWS SDK、按任务/按 shot 计费 | 需要多种硬件、AWS 计费体系 |
+| [Azure Quantum](https://azure.microsoft.com/en-us/products/quantum) | IonQ、Quantinuum、Rigetti 等 | Azure 门户、Q#/Qiskit/Cirq | 企业账号、Azure credits、混合工作流 |
+| [Quantum Inspire](https://www.quantum-inspire.com/) | QuTech 超导/量子点平台 | 网页、模拟器、硬件申请/额度 | 欧洲平台、教学和小电路 |
+| [D-Wave Leap](https://cloud.dwavesys.com/leap/) | 量子退火机 | Leap 云服务、Ocean SDK | 组合优化；**不适合** H+measure QRNG/BB84 |
+
+### 推荐尝试顺序
+
+1. **qBraid 免费计划**：无需信用卡，先用免费模拟器和统一 SDK 跑通 H+measure；
+   官方页面当前列出 100 CPU 小时/月、每模拟器 100 jobs/天、20+ QPU 的免费入口。
+2. **本源量子云**：中文界面，先跑全振幅/含噪声模拟器，再申请“本源悟空”真机机时。
+3. **IBM Quantum**：如果你主要使用 Qiskit，Open Plan 适合做小电路和随机数实验。
+4. **AWS Braket / Azure Quantum**：需要 IonQ、Quantinuum、Rigetti 等硬件时再选。
+5. **QKD**：不要在这类门模型云平台上找；使用 QKD 模拟器或真实 QKD 设备/试验网。
+
+平台额度、可用硬件和地区限制会变化，注册前以各平台当前页面为准。
+
 ## 方案 A：Qiskit Aer 本地模拟
 
 ```bash
