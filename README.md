@@ -14,7 +14,7 @@
 [![CUDA](https://img.shields.io/badge/CUDA-12.x-76B900?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql)](https://www.postgresql.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![CI](https://github.com/TanLB1289808226/civilization-spark/actions/workflows/ci.yml/badge.svg)](https://github.com/TanLB1289808226/civilization-spark/actions/workflows/ci.yml)
+[![CI](https://github.com/TanLB3396059837/civilization-spark/actions/workflows/ci.yml/badge.svg)](https://github.com/TanLB3396059837/civilization-spark/actions/workflows/ci.yml)
 
 </div>
 
@@ -114,7 +114,7 @@ Agent  0 | Tribios / 缇宝 | 门径 · 同理 → 同谐
 ### Linux / rented GPU: one command
 
 ```bash
-git clone --recursive https://github.com/TanLB1289808226/civilization-spark.git
+git clone --recursive https://github.com/TanLB3396059837/civilization-spark.git
 cd civilization-spark
 bash scripts/linux_oneclick.sh
 ```
@@ -132,7 +132,7 @@ bash scripts/linux_oneclick.sh --no-model --no-postgres
 ### Windows + CLion
 
 ```powershell
-git clone --recursive https://github.com/TanLB1289808226/civilization-spark.git
+git clone --recursive https://github.com/TanLB3396059837/civilization-spark.git
 cd civilization-spark
 .\scripts\download_model.ps1
 ```
