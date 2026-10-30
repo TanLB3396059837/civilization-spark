@@ -180,7 +180,7 @@ docker run --rm --gpus all civilization-spark
 | `CIV_N_CTX` | Контекст на одного агента | `512` для 6 ГБ VRAM |
 | `CIV_N_GPU_LAYERS` | Слоёв на GPU | `99` |
 | `CIV_WORLD_MODE` | Режим мира по мотивам Амфореуса | `amphoreus` |
-| `CIV_MAX_ROUNDS` | Максимум раундов симуляции | `13` (один полный цикл Титанов) |
+| `CIV_MAX_ROUNDS` | Всего раундов симуляции, 1–100 | `13` (один цикл по умолчанию) или `100` (многоцикловый запуск) |
 | `CIV_SELF_TRAIN` | Включить онлайн-обучение состояния | `1` |
 | `CIV_TRAINING_MIN_SCORE` | Минимальная оценка обучающего примера | `0.62` |
 | `CIV_TRAINING_EXPORT` | Путь JSONL для accepted-примеров | `training_data/spark.jsonl` |

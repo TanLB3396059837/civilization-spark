@@ -44,7 +44,7 @@ Agent 1 读取开场 + Agent 0 的回应后回答
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `CIV_DEBATE_MODE` | `parallel` | `roundtable` 开启对话 |
-| `CIV_MAX_ROUNDS` | `7` | 对话/模拟轮数 |
+| `CIV_MAX_ROUNDS` | `13` | 总对话/模拟轮数，范围 1–100 |
 | `CIV_N_CTX` | `2048` | 每个 Agent 的上下文 |
 | `CIV_ROUNDTABLE_TOPIC` | 内置中文议题 | 自定义议题 |
 | `CIV_TEMPERATURE` | `0.75` | 采样温度 |

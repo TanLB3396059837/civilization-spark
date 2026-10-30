@@ -188,7 +188,7 @@ docker run --rm --gpus all civilization-spark
 | `CIV_N_CTX` | 每个 Agent 的上下文长度 | `512`（6 GB 显存） |
 | `CIV_N_GPU_LAYERS` | offload 到 GPU 的层数 | `99` |
 | `CIV_WORLD_MODE` | 翁法罗斯灵感世界机制 | `amphoreus` |
-| `CIV_MAX_ROUNDS` | 最大模拟轮数 | `13`（一个完整泰坦轮回） |
+| `CIV_MAX_ROUNDS` | 总模拟轮数，范围 1–100 | `13`（默认一个轮回）或 `100`（多轮回长跑） |
 | `CIV_SELF_TRAIN` | 开启在线状态学习与样本筛选 | `1` |
 | `CIV_TRAINING_MIN_SCORE` | 训练样本最低接受分 | `0.62` |
 | `CIV_TRAINING_EXPORT` | accepted 样本 JSONL 路径 | `training_data/spark.jsonl` |

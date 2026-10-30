@@ -1,5 +1,23 @@
 # Changelog
 
+## v3.3.12 - 2026-10-30
+
+### Changed
+
+- Separated the 13-stage Titan cycle length from the total simulation duration.
+  `CIV_MAX_ROUNDS` now accepts 1–100 total rounds and defaults to one 13-stage
+  cycle.
+- A black-tide extinction ends the current cycle but no longer terminates a
+  longer multi-cycle run. The next round starts the fresh cycle with all 13
+  Titan stages reopened.
+- Titan progress denominators and event payloads now use the shared
+  `TITAN_STAGES` constant.
+
+### Validated
+
+- A local 100-round CPU/PostgreSQL run completes across repeated cycles with
+  per-cycle extinction and re-creation records.
+
 ## v3.3.11 - 2026-10-30
 
 ### Changed

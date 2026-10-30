@@ -11,7 +11,8 @@ namespace civ {
     class Simulation {
     public:
         static constexpr std::size_t MAX_AGENTS = 13;
-        static constexpr std::size_t MAX_ROUNDS = 13;
+        static constexpr std::size_t TITAN_STAGES = 13;
+        static constexpr std::size_t MAX_ROUNDS = 100;
 
         Simulation(std::uint64_t seed = 42);
         ~Simulation();
@@ -33,7 +34,7 @@ namespace civ {
         void black_tide_tick();
         void simulate_catastrophe();
         bool trial_cycle_complete() const noexcept {
-            return trial_cursor_ >= 13;
+            return trial_cursor_ >= TITAN_STAGES;
         }
         bool love_factor_alive() const noexcept {
             return agents_[LOVE_FACTOR_INDEX] != nullptr;
@@ -72,7 +73,7 @@ namespace civ {
         std::size_t active_count_ = MAX_AGENTS;
         std::uint32_t round_ = 0;
         int n_ctx_ = 2048;
-        int max_rounds_ = static_cast<int>(MAX_ROUNDS);
+        int max_rounds_ = static_cast<int>(TITAN_STAGES);
         bool roundtable_mode_ = false;
         bool world_mode_ = false;
         int cycle_ = 0;

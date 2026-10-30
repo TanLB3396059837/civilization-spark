@@ -176,7 +176,7 @@ ORDER BY round_no, name;
 ```text
 CIV_WORLD_MODE=amphoreus
 CIV_DEBATE_MODE=roundtable
-CIV_MAX_ROUNDS=13  # 一个完整轮回
+CIV_MAX_ROUNDS=13  # 默认一个轮回；设为 100 可连续运行多轮回
 CIV_N_CTX=512
 ```
 

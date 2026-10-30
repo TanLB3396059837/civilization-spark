@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(civilization_spark VERSION 3.3.11 LANGUAGES CXX)
+project(civilization_spark VERSION 3.3.12 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

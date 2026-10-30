@@ -626,7 +626,8 @@ void Simulation::apply_titan_trial() {
     }
     std::sort(participants.begin(), participants.end());
 
-    std::cout << "[泰坦关卡 " << trial_cursor_ + 1 << "/13] "
+    std::cout << "[泰坦关卡 " << trial_cursor_ + 1
+              << "/" << TITAN_STAGES << "] "
               << current_trial_ << " | 参与者 " << participants.size()
               << "/" << alive.size() << " | ";
     for (std::size_t i = 0; i < participants.size(); ++i) {
@@ -647,7 +648,8 @@ void Simulation::apply_titan_trial() {
         "{\"mode\":\"stage\",\"cycle\":" +
             std::to_string(cycle_ + 1) + ",\"stage\":" +
             std::to_string(trial_cursor_ + 1) +
-            ",\"total_stages\":13,\"trial\":\"" +
+            ",\"total_stages\":" + std::to_string(TITAN_STAGES) +
+            ",\"trial\":\"" +
             json_escape(current_trial_) +
             "\",\"participants\":" + participant_json.str() + "}");
 
@@ -683,7 +685,8 @@ void Simulation::apply_titan_trial() {
         agents_[i]->remember(
             std::string(cleared ? "Cleared" : "Failed") +
                 " Titan stage " + std::to_string(trial_cursor_ + 1) +
-                "/13 (" + current_trial_ + "); path " +
+                "/" + std::to_string(TITAN_STAGES) + " (" +
+                current_trial_ + "); path " +
                 agents_[i]->titan_path() +
                 (resonant ? "; path resonance active" : ""),
             MemoryKind::World, cleared ? (resonant ? 0.80f : 0.66f) : 0.50f,
@@ -734,12 +737,14 @@ void Simulation::apply_titan_trial() {
         ++trial_cursor_;
         ++titan_trials_completed_;
         std::cout << "  [关卡通过] " << current_trial_
-                  << " -> 进度 " << trial_cursor_ << "/13" << std::endl;
+                  << " -> 进度 " << trial_cursor_ << "/"
+                  << TITAN_STAGES << std::endl;
         persist_event(
             static_cast<int>(round_), -1, "titan_trial_completed",
             "{\"cycle\":" + std::to_string(cycle_ + 1) +
                 ",\"stage\":" + std::to_string(trial_cursor_) +
-                ",\"total_stages\":13,\"trial\":\"" +
+                ",\"total_stages\":" + std::to_string(TITAN_STAGES) +
+                ",\"trial\":\"" +
                 json_escape(current_trial_) +
                 "\",\"participants\":" + participant_json.str() +
                 ",\"cleared_agents\":" + cleared_agents_json.str() + "}");
@@ -759,7 +764,9 @@ void Simulation::apply_titan_trial() {
                    static_cast<double>(trial_cursor_), "trials");
     persist_metric(static_cast<int>(round_), -1,
                    "titan_cycle_progress",
-                   static_cast<double>(trial_cursor_) / 13.0, "ratio");
+                   static_cast<double>(trial_cursor_) /
+                       static_cast<double>(TITAN_STAGES),
+                   "ratio");
     world_memory_ = std::min(
         1.0f, world_memory_ + (stage_cleared ? 0.01f : 0.003f));
 }
@@ -844,7 +851,7 @@ void Simulation::simulate_catastrophe() {
         }
     }
 
-    static constexpr const char* kFallbackForms[13] = {
+    static constexpr const char* kFallbackForms[TITAN_STAGES] = {
         "门径崩解：所有门同时闭合，世界被折叠进一条无法返回的走廊。",
         "律法失序：天穹的规则互相矛盾，因果开始倒流，城邦在矛盾中碎裂。",
         "岁月断层：同一天反复发生，时间在记忆里烧成灰，世界忘记如何向前。",
@@ -860,7 +867,7 @@ void Simulation::simulate_catastrophe() {
         "全世回声：记忆与开拓互相覆盖，世界在无限可能中失去唯一形状。",
     };
     const std::size_t form_index =
-        (round_ + static_cast<std::uint32_t>(narrator)) % 13;
+        (round_ + static_cast<std::uint32_t>(narrator)) % TITAN_STAGES;
     std::string catastrophe = kFallbackForms[form_index];
     const std::string system =
         "你是因子" + agents_[narrator]->factor_name() + "（" +
@@ -870,7 +877,8 @@ void Simulation::simulate_catastrophe() {
         "只输出两句话，不要解释规则、不要标题、不要提示词。";
     const std::string user =
         "泰坦试炼：当前进度 " + std::to_string(trial_cursor_) +
-        "/13（顺序：" + titan_trial_list() + "）" +
+        "/" + std::to_string(TITAN_STAGES) + "（顺序：" +
+        titan_trial_list() + "）" +
         "；黑潮：" + std::to_string(static_cast<int>(black_tide_)) +
         "/100；稳定：" + std::to_string(static_cast<int>(stability_)) +
         "。请描述世界此刻如何毁灭，并留下一个仍然存在的火种意象。";
@@ -956,7 +964,8 @@ void Simulation::print_world_state() const {
     }
     std::cout << "[世界状态] 第 " << (cycle_ + 1) << " 轮回"
               << " | 泰坦试炼：" << current_trial_
-              << "（本轮回 " << trial_cursor_ << "/13，累计通关 "
+              << "（本轮回 " << trial_cursor_ << "/" << TITAN_STAGES
+              << "，累计通关 "
               << titan_trials_completed_ << " 场）"
               << " | 黑潮 " << std::fixed << std::setprecision(1)
               << black_tide_ << "/100"
@@ -1008,7 +1017,9 @@ void Simulation::print_genesis_ending() {
                       ",\"all_agents_died\":" +
                       (next_cycle_started ? "true" : "false") +
                       ",\"next_trials\":" +
-                      (next_cycle_started ? "13" : "0") +
+                      (next_cycle_started
+                           ? std::to_string(TITAN_STAGES)
+                           : "0") +
                       ",\"stability\":" + std::to_string(stability_) +
                       ",\"world_memory\":" + std::to_string(world_memory_) +
                       "}");
@@ -1020,7 +1031,7 @@ void Simulation::print_genesis_ending() {
 
 void Simulation::run_full_simulation() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
-    std::cout << "  文明火种 v3.3.11 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
+    std::cout << "  文明火种 v3.3.12 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
     std::cout << "  真FFN + KV滑动窗口 + 活跃集调度" << std::endl;
     if (world_mode_)
         std::cout << "  翁法罗斯灵感模式：泰坦试炼 × 火种传承 × 黑潮 × 再创世"
@@ -1078,18 +1089,22 @@ void Simulation::run_full_simulation() {
             tide_extinction = black_tide_ >= 100.0f && !cycle_complete;
             if (!cycle_complete && !tide_extinction) {
                 std::cout << "[轮回推进] 当前泰坦关卡进度 "
-                          << trial_cursor_ << "/13，尚未触发世界毁灭。"
+                          << trial_cursor_ << "/" << TITAN_STAGES
+                          << "，尚未触发世界毁灭。"
                           << std::endl;
                 persist_event(
                     static_cast<int>(round_), -1, "trial_cycle_progress",
                     "{\"cycle\":" + std::to_string(cycle_ + 1) +
                         ",\"completed\":" +
                         std::to_string(trial_cursor_) +
-                        ",\"total\":13}");
+                        ",\"total\":" +
+                        std::to_string(TITAN_STAGES) + "}");
                 persist_metric(
                     static_cast<int>(round_), -1,
                     "trial_cycle_progress",
-                    static_cast<double>(trial_cursor_) / 13.0, "ratio");
+                    static_cast<double>(trial_cursor_) /
+                        static_cast<double>(TITAN_STAGES),
+                    "ratio");
             }
         }
         if (cycle_complete) {
@@ -1121,7 +1136,6 @@ void Simulation::run_full_simulation() {
             std::cout << "\n[系统] 只剩一个智能体，提前结束。\n";
             break;
         }
-        if (tide_extinction) break;
     }
 
     print_separator();
@@ -1441,12 +1455,12 @@ void Simulation::roundtable_phase() {
     // Rebuttal pass: each agent must answer someone else after reading the room.
     std::vector<Line> rebuttals;
     for (std::size_t i = 0; i < ptrs.size(); ++i) {
-        static constexpr int kOpponents[13] = {
+        static constexpr int kOpponents[MAX_AGENTS] = {
             6, 5, 10, 4, 3, 1, 0, 12, 11, 1, 2, 8, 7
         };
         std::size_t target_idx =
             (i == 0 ? openings.size() - 1 : i - 1);
-        const int desired = kOpponents[alive[i] % 13];
+        const int desired = kOpponents[alive[i] % MAX_AGENTS];
         for (std::size_t k = 0; k < openings.size(); ++k) {
             if (openings[k].agent == desired) {
                 target_idx = k;
@@ -1649,7 +1663,7 @@ void Simulation::rebirth_phase() {
         if (!completed_all_trials && !overwhelmed_by_black_tide) {
             std::cout << "[轮回推进] 第 " << (cycle_ + 1)
                       << " 轮回尚未完成，当前进度 "
-                      << trial_cursor_ << "/13。"
+                      << trial_cursor_ << "/" << TITAN_STAGES << "。"
                       << std::endl;
             return;
         }
@@ -1710,7 +1724,8 @@ void Simulation::rebirth_phase() {
                                       : "black_tide_100") +
                 "\""
                 ",\"all_agents_died\":true"
-                ",\"next_trials\":13"
+                ",\"next_trials\":" +
+                std::to_string(TITAN_STAGES) +
                 ",\"black_tide\":" + std::to_string(black_tide_) +
                 ",\"stability\":" + std::to_string(stability_) +
                 ",\"world_memory\":" + std::to_string(world_memory_) + "}");
