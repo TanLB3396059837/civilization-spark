@@ -149,6 +149,34 @@ R"SQL(
 CREATE INDEX IF NOT EXISTS quantum_samples_job_idx
     ON quantum_samples (quantum_job_id, program_index)
 )SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS conversations (
+    conversation_id BIGSERIAL PRIMARY KEY,
+    run_id          BIGINT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    topic           TEXT NOT NULL,
+    mode            TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at     TIMESTAMPTZ
+)
+)SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    message_id           BIGSERIAL PRIMARY KEY,
+    conversation_id      BIGINT NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+    round_no             INTEGER NOT NULL,
+    turn_no              INTEGER NOT NULL,
+    speaker_agent        INTEGER,
+    target_agent         INTEGER,
+    reply_to_message_id  BIGINT,
+    phase                TEXT NOT NULL,
+    content              TEXT NOT NULL,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+)SQL",
+R"SQL(
+CREATE INDEX IF NOT EXISTS conversation_messages_conversation_idx
+    ON conversation_messages (conversation_id, round_no, turn_no, message_id)
+)SQL",
 };
 
 } // namespace
@@ -348,6 +376,38 @@ void PostgresStore::add_quantum_sample(const QuantumSampleRecord& sample) {
         {std::to_string(sample.quantum_job_id),
          std::to_string(sample.program_index), sample.bitstring,
          std::to_string(sample.count)});
+}
+
+std::int64_t PostgresStore::create_conversation(
+    std::int64_t run_id, const std::string& topic, const std::string& mode) {
+    return exec_id(
+        "INSERT INTO conversations (run_id, topic, mode) "
+        "VALUES ($1::bigint, $2, $3) RETURNING conversation_id",
+        {std::to_string(run_id), topic, mode});
+}
+
+std::int64_t PostgresStore::add_conversation_message(
+    const ConversationMessageRecord& message) {
+    return exec_id(
+        "INSERT INTO conversation_messages "
+        "(conversation_id, round_no, turn_no, speaker_agent, target_agent, "
+        " reply_to_message_id, phase, content) "
+        "VALUES ($1::bigint, $2::int, $3::int, NULLIF($4::int,-1), "
+        "NULLIF($5::int,-1), NULLIF($6::bigint,-1), $7, $8) "
+        "RETURNING message_id",
+        {std::to_string(message.conversation_id),
+         std::to_string(message.round_no), std::to_string(message.turn_no),
+         std::to_string(message.speaker_agent),
+         std::to_string(message.target_agent),
+         std::to_string(message.reply_to_message_id),
+         message.phase, message.content});
+}
+
+void PostgresStore::finish_conversation(std::int64_t conversation_id) {
+    exec_command(
+        "UPDATE conversations SET finished_at=now() "
+        "WHERE conversation_id=$1::bigint",
+        {std::to_string(conversation_id)});
 }
 
 std::int64_t PostgresStore::create_benchmark(const std::string& name,

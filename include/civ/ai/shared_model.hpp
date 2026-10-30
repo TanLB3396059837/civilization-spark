@@ -42,6 +42,8 @@ namespace civ {
         int n_vocab() const noexcept { return n_vocab_; }
         int n_ctx_per_seq() const noexcept { return n_ctx_per_seq_; }
         std::mutex& decode_mutex() { return decode_mutex_; }
+        std::string format_chat(const std::string& system,
+                                const std::string& user) const;
 
         int sequence_kv_usage(int seq_id) const;
         float kv_usage_ratio() const;

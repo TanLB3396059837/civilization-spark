@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.3.6 - 2026-10-30
+
+### Added
+
+- True 13-agent roundtable mode: `CIV_DEBATE_MODE=roundtable`.
+- Opening statements plus a rebuttal pass where every agent reads the room.
+- PostgreSQL `conversations` and `conversation_messages` tables with
+  `speaker_agent`, `target_agent`, and `reply_to_message_id`.
+- Chat-template based generation with UTF-8-safe output and meta-reply fallback.
+- `CIV_MAX_ROUNDS` for short conversation validation.
+
 ## v3.3.0 - 2026-10-19
 
 ### Added

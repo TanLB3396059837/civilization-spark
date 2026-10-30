@@ -26,6 +26,8 @@ export CIV_PG_DSN="host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass
 | `benchmark_results` | 每次 benchmark 的 wall_ms、survivors 等结果 |
 | `quantum_jobs` | 量子平台 job、backend、shots、QPU 时间、派生 seed、关联 run |
 | `quantum_samples` | 每个程序每个 bitstring 的 counts |
+| `conversations` | 一场圆桌对话的 run、议题、模式和结束时间 |
+| `conversation_messages` | 每轮开场/回应、发言者、目标 Agent 和 reply_to 链 |
 
 Schema 由 `PostgresStore::migrate()` 幂等创建，不需要手动执行 SQL。
 
@@ -151,4 +153,18 @@ SELECT program_index, bitstring, count
 FROM quantum_samples
 WHERE quantum_job_id = 2
 ORDER BY program_index, bitstring;
+```
+
+## 9. 对话记录
+
+```sql
+SELECT c.conversation_id, c.run_id, c.topic, c.mode, c.finished_at
+FROM conversations c
+ORDER BY c.conversation_id DESC;
+
+SELECT m.round_no, m.turn_no, m.speaker_agent, m.target_agent,
+       m.phase, m.reply_to_message_id, left(m.content, 80)
+FROM conversation_messages m
+WHERE m.conversation_id = 2
+ORDER BY m.message_id;
 ```

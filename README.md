@@ -68,6 +68,20 @@ flowchart LR
     G --> I[Benchmark / replay / analysis]
 ```
 
+## True roundtable conversation
+
+```bash
+export CIV_DEBATE_MODE=roundtable
+export CIV_MAX_ROUNDS=1
+./build/cuda-release/civ_main 42
+```
+
+All 13 agents first give opening statements. Then each agent reads the full opening room
+and recent rebuttals, and directly responds to another agent. PostgreSQL stores the
+speaker, target, phase, and `reply_to_message_id` chain.
+
+See [the conversation guide (Chinese)](docs/CONVERSATION.md).
+
 ## The 13 factors
 
 <details>
@@ -224,6 +238,7 @@ third_party/       llama.cpp submodule
 - [Benchmarks](docs/BENCHMARKS.md)
 - [Quantum computer testing (Chinese)](docs/QUANTUM.md)
 - [RoCEv2 testing (Chinese)](docs/RDMA.md)
+- [True roundtable conversation mode (Chinese)](docs/CONVERSATION.md)
 - [Contributing](CONTRIBUTING.md) · [简体中文](CONTRIBUTING.zh-CN.md) · [Русский](CONTRIBUTING.ru.md)
 - [Security policy](SECURITY.md)
 

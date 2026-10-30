@@ -104,6 +104,33 @@ int main() {
         sample.count = 4;
         store.add_quantum_sample(sample);
 
+        const std::int64_t conversation_id =
+            store.create_conversation(run_id, "何为生命第一因？", "roundtable");
+        CHECK(conversation_id > 0, "创建 conversation");
+
+        ConversationMessageRecord opening;
+        opening.conversation_id = conversation_id;
+        opening.round_no = 1;
+        opening.turn_no = 0;
+        opening.speaker_agent = 0;
+        opening.phase = "opening";
+        opening.content = "生命的第一因是同理。";
+        const std::int64_t opening_id =
+            store.add_conversation_message(opening);
+
+        ConversationMessageRecord rebuttal;
+        rebuttal.conversation_id = conversation_id;
+        rebuttal.round_no = 1;
+        rebuttal.turn_no = 1;
+        rebuttal.speaker_agent = 1;
+        rebuttal.target_agent = 0;
+        rebuttal.reply_to_message_id = opening_id;
+        rebuttal.phase = "rebuttal";
+        rebuttal.content = "我回应 Agent 0：秩序同样能保全生命。";
+        CHECK(store.add_conversation_message(rebuttal) > 0,
+              "创建 conversation message");
+        store.finish_conversation(conversation_id);
+
         CHECK(store.scalar("SELECT COUNT(*) FROM runs WHERE run_id=$1::bigint",
                            {std::to_string(run_id)}) == 1, "run 可查询");
         CHECK(store.scalar("SELECT COUNT(*) FROM agents WHERE run_id=$1::bigint",
@@ -121,6 +148,16 @@ int main() {
         CHECK(store.scalar(
                   "SELECT COUNT(*) FROM quantum_samples WHERE quantum_job_id=$1::bigint",
                   {std::to_string(quantum_job_id)}) == 1, "quantum sample 可查询");
+        CHECK(store.scalar(
+                  "SELECT COUNT(*) FROM conversation_messages "
+                  "WHERE conversation_id=$1::bigint",
+                  {std::to_string(conversation_id)}) == 2,
+              "conversation messages 可查询");
+        CHECK(store.scalar(
+                  "SELECT COUNT(*) FROM conversations "
+                  "WHERE conversation_id=$1::bigint AND finished_at IS NOT NULL",
+                  {std::to_string(conversation_id)}) == 1,
+              "conversation 可查询");
         CHECK(store.scalar(
                   "SELECT COUNT(*) FROM runs WHERE run_id=$1::bigint "
                   "AND seed_source='originqc'",

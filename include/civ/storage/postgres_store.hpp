@@ -68,6 +68,17 @@ struct QuantumSampleRecord {
     int          count = 0;
 };
 
+struct ConversationMessageRecord {
+    std::int64_t conversation_id = -1;
+    int          round_no = 0;
+    int          turn_no = 0;
+    int          speaker_agent = -1;
+    int          target_agent = -1;
+    std::int64_t reply_to_message_id = -1;
+    std::string  phase;
+    std::string  content;
+};
+
 // 一条 libpq 连接。非线程安全：每个线程使用独立实例。
 class PostgresStore {
 public:
@@ -97,6 +108,13 @@ public:
 
     std::int64_t record_quantum_job(const QuantumJobRecord& job);
     void add_quantum_sample(const QuantumSampleRecord& sample);
+
+    std::int64_t create_conversation(std::int64_t run_id,
+                                     const std::string& topic,
+                                     const std::string& mode);
+    std::int64_t add_conversation_message(
+        const ConversationMessageRecord& message);
+    void finish_conversation(std::int64_t conversation_id);
 
     std::int64_t create_benchmark(const std::string& name,
                                   const std::string& config_json);

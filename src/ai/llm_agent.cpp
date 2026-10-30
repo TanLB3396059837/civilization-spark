@@ -579,6 +579,16 @@ std::string LLMAgent::generate(const std::string& prompt, int max_tokens) {
     return oss.str();
 }
 
+std::string LLMAgent::generate_chat(const std::string& system,
+                                    const std::string& user,
+                                    int max_tokens) {
+    auto& pool = SharedModelPool::instance();
+    if (pool.is_loaded()) {
+        return generate(pool.format_chat(system, user), max_tokens);
+    }
+    return generate(user, max_tokens);
+}
+
 void LLMAgent::learn(const Vector& exp, float lr) {
     float loss = 0.0f;
     for (std::size_t i = 0; i < DIM; ++i) {

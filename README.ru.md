@@ -68,6 +68,12 @@ flowchart LR
     G --> I[Бенчмарк / воспроизведение / анализ]
 ```
 
+## Режим круглого стола
+
+Режим включается через `CIV_DEBATE_MODE=roundtable`: каждый агент читает вступительные
+выступления и недавние ответы, затем отвечает другому участнику. Полная цепочка
+сохраняется в PostgreSQL. Подробнее: [docs/CONVERSATION.md](docs/CONVERSATION.md).
+
 ## 13 факторов
 
 <details>
@@ -208,6 +214,7 @@ third_party/       submodule llama.cpp
 - [Бенчмарки](docs/BENCHMARKS.md)
 - [Тестирование на квантовом компьютере (китайский)](docs/QUANTUM.md)
 - [Тестирование RoCEv2 (китайский)](docs/RDMA.md)
+- [Режим круглого стола (китайский)](docs/CONVERSATION.md)
 - [Участие в разработке](CONTRIBUTING.ru.md) · [English](CONTRIBUTING.md) · [简体中文](CONTRIBUTING.zh-CN.md)
 - [Политика безопасности](SECURITY.md)
 

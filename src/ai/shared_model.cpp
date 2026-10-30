@@ -217,6 +217,37 @@ float SharedModelPool::kv_usage_ratio() const {
 #endif
 }
 
+std::string SharedModelPool::format_chat(const std::string& system,
+                                         const std::string& user) const {
+#ifdef CIV_USE_LLAMA
+    if (!model_) return system + "\n\n" + user;
+    const char* tmpl = llama_model_chat_template(model_, nullptr);
+    if (!tmpl || !*tmpl) return system + "\n\n" + user;
+
+    llama_chat_message messages[] = {
+        {"system", system.c_str()},
+        {"user", user.c_str()},
+    };
+    const std::size_t estimate =
+        (system.size() + user.size()) * 2 + 512;
+    std::vector<char> buffer(estimate);
+    int n = llama_chat_apply_template(
+        tmpl, messages, 2, true, buffer.data(),
+        static_cast<int32_t>(buffer.size()));
+    if (n < 0) return system + "\n\n" + user;
+    if (static_cast<std::size_t>(n) > buffer.size()) {
+        buffer.resize(static_cast<std::size_t>(n) + 1);
+        n = llama_chat_apply_template(
+            tmpl, messages, 2, true, buffer.data(),
+            static_cast<int32_t>(buffer.size()));
+        if (n < 0) return system + "\n\n" + user;
+    }
+    return std::string(buffer.data(), static_cast<std::size_t>(n));
+#else
+    return system + "\n\n" + user;
+#endif
+}
+
 SharedModelPool::~SharedModelPool() {
 #ifdef CIV_USE_LLAMA
     if (batch_cache_) {

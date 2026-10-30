@@ -65,6 +65,9 @@ public:
 
     // LLM
     std::string generate(const std::string& prompt, int max_tokens = 32);
+    std::string generate_chat(const std::string& system,
+                              const std::string& user,
+                              int max_tokens = 32);
     void begin_generation(const std::string& prompt, int max_tokens, int n_ctx);
     std::int32_t sample_next_token();
     void set_logits(std::vector<float>&& logits);

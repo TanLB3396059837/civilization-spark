@@ -60,6 +60,19 @@ flowchart LR
     G --> I[Benchmark / 回放 / 分析]
 ```
 
+## 真正圆桌对话
+
+```bash
+export CIV_DEBATE_MODE=roundtable
+export CIV_MAX_ROUNDS=1
+./build/cuda-release/civ_main 42
+```
+
+13 个 Agent 先各自开场，然后每个 Agent 读取全场开场观点和最近回应，直接回应另一个
+Agent。PostgreSQL 会记录发言者、目标、阶段和 `reply_to_message_id` 对话链。
+
+详细说明：[docs/CONVERSATION.md](docs/CONVERSATION.md)
+
 ## 13 个因子
 
 <details>
@@ -212,6 +225,7 @@ third_party/       llama.cpp submodule
 - [基准测试](docs/BENCHMARKS.md)
 - [量子计算机测试](docs/QUANTUM.md)
 - [RoCEv2 测试](docs/RDMA.md)
+- [真正圆桌对话模式](docs/CONVERSATION.md)
 - [贡献指南](CONTRIBUTING.zh-CN.md) · [English](CONTRIBUTING.md) · [Русский](CONTRIBUTING.ru.md)
 - [安全策略](SECURITY.md)
 
