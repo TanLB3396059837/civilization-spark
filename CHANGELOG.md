@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.3.14 - 2026-10-30
+
+### Added
+
+- Native Moore Threads MUSA build support for the bundled llama.cpp backend,
+  including automatic MTT S4000 (`MUSA_ARCHITECTURES=22`) detection.
+- `CIV_MAX_ROUNDS=0` runs without a round limit and continues across
+  re-creation cycles until the rented instance is terminated.
+- CUDA and MUSA backends are mutually selected at configure time, while the
+  existing NVIDIA custom-kernel path remains unchanged.
+
+### Validated
+
+- Local finite and multi-cycle tests remain compatible with the unlimited
+  round mode.
+- MUSA runtime validation is performed on an MTT S4000 48 GB instance.
+
 ## v3.3.13 - 2026-10-30
 
 ### Added

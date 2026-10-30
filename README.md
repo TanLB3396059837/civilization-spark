@@ -204,7 +204,7 @@ docker run --rm --gpus all civilization-spark
 | `CIV_N_CTX` | Context length per agent | `512` for 6 GB VRAM |
 | `CIV_N_GPU_LAYERS` | Layers offloaded to GPU | `99` |
 | `CIV_WORLD_MODE` | Amphoreus-inspired world layer | `amphoreus` |
-| `CIV_MAX_ROUNDS` | Total simulated rounds, 1–100 | `13` (default one cycle) or `100` (multi-cycle run) |
+| `CIV_MAX_ROUNDS` | `0` means unlimited; finite range 1–100 | `0` until the rented instance expires |
 | `CIV_SELF_TRAIN` | Enable online state learning and sample filtering | `1` |
 | `CIV_TRAINING_MIN_SCORE` | Minimum accepted self-training score | `0.62` |
 | `CIV_TRAINING_EXPORT` | Accepted-sample JSONL path | `training_data/spark.jsonl` |

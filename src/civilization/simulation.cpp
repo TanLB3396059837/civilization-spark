@@ -202,8 +202,10 @@ Simulation::Simulation(std::uint64_t seed) {
     }
     if (const char* rounds = std::getenv("CIV_MAX_ROUNDS")) {
         const int v = std::atoi(rounds);
-        max_rounds_ = std::clamp(v, 1,
-                                 static_cast<int>(MAX_ROUNDS));
+        max_rounds_ = v == 0
+                          ? 0
+                          : std::clamp(v, 1,
+                                       static_cast<int>(MAX_ROUNDS));
     }
 
     if (const char* nctx = std::getenv("CIV_N_CTX")) {
@@ -215,7 +217,7 @@ Simulation::Simulation(std::uint64_t seed) {
     int model_gpu_layers = 0;
     if (model_path) {
         int n_gpu_layers = 0;
-#ifdef CIV_USE_CUDA
+#if defined(CIV_USE_CUDA) || defined(CIV_USE_MUSA)
         n_gpu_layers = 99;
 #endif
         if (const char* layers = std::getenv("CIV_N_GPU_LAYERS")) {
@@ -1275,7 +1277,7 @@ void Simulation::print_genesis_ending() {
 
 void Simulation::run_full_simulation() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
-    std::cout << "  文明火种 v3.3.13 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
+    std::cout << "  文明火种 v3.3.14 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
     std::cout << "  真FFN + KV滑动窗口 + 活跃集调度" << std::endl;
     if (world_mode_)
         std::cout << "  翁法罗斯灵感模式：泰坦试炼 × 火种传承 × 黑潮 × 再创世"
@@ -1299,7 +1301,7 @@ void Simulation::run_full_simulation() {
         std::cout << "           第一因：" << agents_[i]->express_first_cause() << std::endl;
     }
 
-    for (int r = 0; r < max_rounds_; ++r) {
+    for (int r = 0; max_rounds_ == 0 || r < max_rounds_; ++r) {
         if (active_count_ <= 1) break;
         ++round_;
         round_id_ = -1;

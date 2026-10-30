@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(civilization_spark VERSION 3.3.13 LANGUAGES CXX)
+project(civilization_spark VERSION 3.3.14 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,6 +39,7 @@ endif()
 
 # ---- CUDA 可选 ----
 option(CIV_ENABLE_CUDA "Enable CUDA kernels when a CUDA toolkit is available" ON)
+option(CIV_ENABLE_MUSA "Enable llama.cpp MUSA backend when the toolkit is available" ON)
 option(CIV_ENABLE_LLAMA "Build and link the bundled llama.cpp backend" ON)
 include(CheckLanguage)
 if(CIV_ENABLE_CUDA)
@@ -54,7 +55,24 @@ if(CIV_ENABLE_CUDA AND CMAKE_CUDA_COMPILER)
     message(STATUS "CIV: CUDA enabled (arch=${CMAKE_CUDA_ARCHITECTURES})")
 else()
     set(CIV_HAS_CUDA OFF)
-    message(STATUS "CIV: CUDA not found, CPU-only")
+    message(STATUS "CIV: CUDA custom kernels not enabled")
+endif()
+
+# ---- MUSA (Moore Threads) ----
+set(CIV_HAS_MUSA OFF)
+if(CIV_ENABLE_MUSA)
+    if(DEFINED ENV{MUSA_PATH} AND EXISTS "$ENV{MUSA_PATH}/cmake")
+        set(CIV_HAS_MUSA ON)
+    elseif(EXISTS "/usr/local/musa/cmake")
+        set(CIV_HAS_MUSA ON)
+    elseif(EXISTS "/opt/musa/cmake")
+        set(CIV_HAS_MUSA ON)
+    endif()
+endif()
+if(CIV_HAS_MUSA)
+    message(STATUS "CIV: MUSA backend enabled")
+else()
+    message(STATUS "CIV: MUSA backend not enabled")
 endif()
 
 # ---- RDMA ----
@@ -66,6 +84,11 @@ find_package(RDMA QUIET)
 # ============================================================
 if(CIV_ENABLE_LLAMA AND EXISTS ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/CMakeLists.txt)
     set(GGML_CUDA   ${CIV_HAS_CUDA} CACHE BOOL "" FORCE)
+    set(GGML_MUSA   ${CIV_HAS_MUSA} CACHE BOOL "" FORCE)
+    if(CIV_HAS_MUSA)
+        set(GGML_CUDA OFF CACHE BOOL "" FORCE)
+        set(MUSA_ARCHITECTURES "22" CACHE STRING "" FORCE)
+    endif()
     set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
     set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 
@@ -90,7 +113,7 @@ if(CIV_ENABLE_LLAMA AND EXISTS ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/CMakeLi
 
     add_subdirectory(third_party/llama.cpp)
     set(CIV_HAS_LLAMA ON)
-    message(STATUS "CIV: llama.cpp enabled (GGML_CUDA=${GGML_CUDA})")
+    message(STATUS "CIV: llama.cpp enabled (GGML_CUDA=${GGML_CUDA}, GGML_MUSA=${GGML_MUSA})")
 else()
     set(CIV_HAS_LLAMA OFF)
     message(STATUS "CIV: llama.cpp not found, using built-in transformer")
@@ -160,6 +183,10 @@ if(CIV_HAS_CUDA)
     )
     set_target_properties(civ_ai PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
     target_compile_definitions(civ_ai PUBLIC CIV_USE_CUDA=1)
+endif()
+
+if(CIV_HAS_MUSA)
+    target_compile_definitions(civ_ai PUBLIC CIV_USE_MUSA=1)
 endif()
 
 if(CIV_HAS_LLAMA)
