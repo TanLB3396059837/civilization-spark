@@ -12,10 +12,42 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstdio>
+#include <string_view>
 
 namespace civ {
 
 namespace {
+
+constexpr std::array<std::string_view, 13> kTitanTrials{{
+    "门径", "律法", "岁月", "大地", "海洋", "天空",
+    "负世", "理性", "浪漫", "纷争", "死亡", "诡计", "全世"
+}};
+
+std::string titan_trial_list() {
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < kTitanTrials.size(); ++i) {
+        if (i) oss << "、";
+        oss << kTitanTrials[i];
+    }
+    return oss.str();
+}
+
+std::string titan_trial_json() {
+    std::ostringstream oss;
+    oss << '[';
+    for (std::size_t i = 0; i < kTitanTrials.size(); ++i) {
+        if (i) oss << ',';
+        oss << '"' << kTitanTrials[i] << '"';
+    }
+    oss << ']';
+    return oss.str();
+}
+
+bool titan_resonates(std::string_view path, std::string_view trial) {
+    return path == trial ||
+           ((trial == "全世" || trial == "岁月") &&
+            path.find(trial) != std::string_view::npos);
+}
 
 std::string json_escape(const std::string& text) {
     std::string out;
@@ -543,39 +575,85 @@ AgentId Simulation::weakest_agent() const {
 }
 
 void Simulation::apply_titan_trial() {
-    static constexpr const char* kTrials[13] = {
-        "门径", "律法", "岁月", "大地", "海洋", "天空",
-        "负世", "理性", "浪漫", "纷争", "死亡", "诡计", "全世"
-    };
-    current_trial_ = kTrials[(round_ - 1) % 13];
+    current_trial_ = "全部泰坦";
+    const std::string trials = titan_trial_list();
+    titan_trials_completed_ +=
+        static_cast<int>(kTitanTrials.size());
+    titan_resonance_.fill(0);
 
-    std::cout << "[泰坦试炼] 本轮试炼：" << current_trial_ << std::endl;
-    persist_event(static_cast<int>(round_), -1, "titan_trial",
-                  "{\"trial\":\"" + json_escape(current_trial_) + "\"}");
+    std::cout << "[泰坦试炼] 本轮执行全部 13 泰坦："
+              << trials << std::endl;
+    persist_event(
+        static_cast<int>(round_), -1, "titan_trial",
+        "{\"mode\":\"all\",\"count\":13,\"trials\":" +
+            titan_trial_json() + "}");
 
+    std::vector<int> trial_resonances(kTitanTrials.size(), 0);
+    int alive_count = 0;
     for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
         if (!agents_[i]) continue;
+        ++alive_count;
         const std::string& path = agents_[i]->titan_path();
-        const bool resonance =
-            path == current_trial_ ||
-            (current_trial_ == "全世" && path.find("全世") != std::string::npos) ||
-            (current_trial_ == "岁月" && path.find("岁月") != std::string::npos);
-        if (resonance) {
-            agents_[i]->remember(
-                "Titan trial " + current_trial_ +
-                    " resonated with my path " + path,
-                MemoryKind::World, 0.68f,
-                static_cast<int>(round_), "titan_trial");
-            agents_[i]->update_efficiency(0.05f);
-            coreflame_[i] = std::min(1.5f, coreflame_[i] + 0.03f);
-            memory_[i] = std::min(1.0f, memory_[i] + 0.04f);
-            persist_event(static_cast<int>(round_), static_cast<int>(i),
-                          "trial_resonance",
-                          "{\"factor\":\"" +
-                              json_escape(agents_[i]->factor_name()) + "\"}");
+        std::string resonant_paths_json = "[";
+        int resonance_count = 0;
+        for (std::size_t t = 0; t < kTitanTrials.size(); ++t) {
+            const std::string_view trial = kTitanTrials[t];
+            if (!titan_resonates(path, trial)) continue;
+            if (resonance_count > 0) resonant_paths_json += ',';
+            resonant_paths_json += "\"" + json_escape(std::string(trial)) + "\"";
+            ++trial_resonances[t];
+            ++resonance_count;
         }
+        resonant_paths_json += ']';
+
+        titan_resonance_[i] = resonance_count;
+        agents_[i]->update_efficiency(
+            0.01f + 0.005f * static_cast<float>(resonance_count));
+        coreflame_[i] = std::min(
+            1.5f, coreflame_[i] +
+                      0.02f + 0.005f * static_cast<float>(resonance_count));
+        memory_[i] = std::min(
+            1.0f, memory_[i] +
+                      0.03f + 0.01f * static_cast<float>(resonance_count));
+        agents_[i]->remember(
+            "Completed all 13 Titan trials; path " + path +
+                " resonated with " + std::to_string(resonance_count) +
+                " trial(s): " + resonant_paths_json,
+            MemoryKind::World,
+            0.58f + 0.04f * static_cast<float>(resonance_count),
+            static_cast<int>(round_), "titan_gauntlet");
+
+        persist_event(
+            static_cast<int>(round_), static_cast<int>(i),
+            "titan_gauntlet_result",
+            "{\"factor\":\"" +
+                json_escape(agents_[i]->factor_name()) +
+                "\",\"trials_tested\":13,\"resonances\":" +
+                std::to_string(resonance_count) +
+                ",\"resonant_trials\":" + resonant_paths_json + "}");
+        persist_metric(
+            static_cast<int>(round_), static_cast<int>(i),
+            "titan_trials_completed",
+            static_cast<double>(kTitanTrials.size()), "trials");
+        persist_metric(
+            static_cast<int>(round_), static_cast<int>(i),
+            "titan_resonance_count",
+            static_cast<double>(resonance_count), "trials");
     }
-    world_memory_ = std::min(1.0f, world_memory_ + 0.01f);
+
+    for (std::size_t t = 0; t < kTitanTrials.size(); ++t) {
+        persist_event(
+            static_cast<int>(round_), -1, "titan_trial_completed",
+            "{\"trial\":\"" +
+                json_escape(std::string(kTitanTrials[t])) +
+                "\",\"participants\":" + std::to_string(alive_count) +
+                ",\"resonances\":" +
+                std::to_string(trial_resonances[t]) + "}");
+    }
+    persist_metric(static_cast<int>(round_), -1,
+                   "titan_trials_completed",
+                   static_cast<double>(kTitanTrials.size()), "trials");
+    world_memory_ = std::min(1.0f, world_memory_ + 0.02f);
 }
 
 void Simulation::black_tide_tick() {
@@ -646,13 +724,11 @@ void Simulation::simulate_catastrophe() {
     if (alive.empty()) return;
 
     AgentId narrator = strongest_agent();
+    int best_resonance = titan_resonance_[narrator];
     for (AgentId id : alive) {
-        const std::string& path = agents_[id]->titan_path();
-        if (path == current_trial_ ||
-            (current_trial_ == "全世" &&
-             path.find("全世") != std::string::npos)) {
+        if (titan_resonance_[id] > best_resonance) {
+            best_resonance = titan_resonance_[id];
             narrator = id;
-            break;
         }
     }
 
@@ -681,7 +757,7 @@ void Simulation::simulate_catastrophe() {
         "请以角色视角描述这一轮世界毁灭的具体形式。"
         "只输出两句话，不要解释规则、不要标题、不要提示词。";
     const std::string user =
-        "泰坦试炼：" + current_trial_ +
+        "泰坦试炼：全部 13 泰坦（" + titan_trial_list() + "）" +
         "；黑潮：" + std::to_string(static_cast<int>(black_tide_)) +
         "/100；稳定：" + std::to_string(static_cast<int>(stability_)) +
         "。请描述世界此刻如何毁灭，并留下一个仍然存在的火种意象。";
@@ -738,6 +814,8 @@ void Simulation::simulate_catastrophe() {
         "world_catastrophe",
         "{\"trial\":\"" + json_escape(current_trial_) +
             "\",\"narrator\":" + std::to_string(narrator) +
+            ",\"titan_resonance\":" +
+            std::to_string(titan_resonance_[narrator]) +
             ",\"severity\":" + std::to_string(last_catastrophe_severity_) +
             ",\"source\":\"" +
             (catastrophe_from_model ? "llm" : "fallback") + "\"" +
@@ -759,6 +837,8 @@ void Simulation::print_world_state() const {
     }
     std::cout << "[世界状态] 第 " << cycle_ << " 次再创世"
               << " | 泰坦试炼：" << current_trial_
+              << "（覆盖率 13/13，累计 " << titan_trials_completed_
+              << " 场）"
               << " | 黑潮 " << std::fixed << std::setprecision(1)
               << black_tide_ << "/100"
               << " | 稳定 " << stability_
@@ -811,7 +891,7 @@ void Simulation::print_genesis_ending() {
 
 void Simulation::run_full_simulation() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
-    std::cout << "  文明火种 v3.3.9 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
+    std::cout << "  文明火种 v3.3.10 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
     std::cout << "  真FFN + KV滑动窗口 + 活跃集调度" << std::endl;
     if (world_mode_)
         std::cout << "  翁法罗斯灵感模式：泰坦试炼 × 火种传承 × 黑潮 × 再创世"

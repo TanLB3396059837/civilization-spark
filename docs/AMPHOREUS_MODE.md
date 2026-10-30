@@ -18,17 +18,23 @@ export CIV_MAX_ROUNDS=3
 
 ### 泰坦试炼
 
-每一轮从 13 个泰坦路径中轮换一个试炼：
+每一轮让所有存活因子依次经历全部 13 个泰坦试炼，而不是只抽取一个：
 
 ```text
 门径、律法、岁月、大地、海洋、天空、负世、理性、浪漫、纷争、死亡、诡计、全世
 ```
 
-与试炼路径共振的因子获得：
+每个因子每轮都会完成 `13/13` 试炼。与自身路径共振的因子获得额外收益：
 
 - 效率加成
 - 火种增长
 - 世界记忆增长
+
+每轮还会记录：
+
+- 每个因子完成的试炼数；
+- 每个因子的共振数与共振路径；
+- 每个泰坦的参与者数和共振人数。
 
 ### 火种传承
 
@@ -72,8 +78,8 @@ export CIV_MAX_ROUNDS=3
 
 每轮在淘汰前，会选一名存活因子作为“灾变叙述者”：
 
-- 优先选择与当前泰坦试炼路径共振的因子；
-- 否则选择当前最强因子；
+- 从本轮全部泰坦试炼中，优先选择累计共振次数最高的因子；
+- 共振次数相同时选择当前最强因子；
 - 使用该因子的身份、原动力、试炼、黑潮和稳定度构造 prompt；
 - LLM 生成两句话的具体世界毁灭形式；
 - 生成文本写入 `events.kind = 'world_catastrophe'`；
@@ -106,7 +112,8 @@ export CIV_MAX_ROUNDS=3
 ```text
 events:
   titan_trial
-  trial_resonance
+  titan_gauntlet_result
+  titan_trial_completed
   world_catastrophe
   coreflame_transfer
   re_creation
@@ -119,6 +126,8 @@ metrics:
   corruption
   coreflame
   catastrophe_severity
+  titan_trials_completed
+  titan_resonance_count
   re_creation_cycle
   final_black_tide
   final_stability

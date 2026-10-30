@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.3.10 - 2026-10-30
+
+### Changed
+
+- Every re-creation round now runs the complete Titan gauntlet instead of one
+  rotating Titan path.
+- Every surviving factor is tested by all 13 Titans and receives a complete
+  `13/13` coverage record.
+- Resonance results are aggregated per factor and per Titan, with narrator
+  selection based on total resonance count.
+- New events: `titan_gauntlet_result` and `titan_trial_completed`.
+- New metrics: `titan_trials_completed` and `titan_resonance_count`.
+
 ## v3.3.9 - 2026-10-30
 
 ### Added

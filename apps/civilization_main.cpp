@@ -39,6 +39,7 @@ int main(int argc, char* argv[]) {
     civ::Simulation sim(seed);
     sim.run_full_simulation();
     sim.shutdown();
-    civ::SharedModelPool::shutdown_active();
+    if (civ::SharedModelPool::available())
+        civ::SharedModelPool::shutdown_active();
     return 0;
 }

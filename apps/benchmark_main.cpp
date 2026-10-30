@@ -106,6 +106,7 @@ int main() {
             sim.shutdown();
         }
     }
-    civ::SharedModelPool::shutdown_active();
+    if (civ::SharedModelPool::available())
+        civ::SharedModelPool::shutdown_active();
     return 0;
 }

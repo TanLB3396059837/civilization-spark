@@ -77,6 +77,8 @@ namespace civ {
         std::array<float, MAX_AGENTS> coreflame_{};
         std::array<float, MAX_AGENTS> corruption_{};
         std::array<float, MAX_AGENTS> memory_{};
+        std::array<int, MAX_AGENTS> titan_resonance_{};
+        int titan_trials_completed_ = 0;
         bool self_training_enabled_ = true;
         bool export_training_ = false;
         std::string training_export_path_;

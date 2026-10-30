@@ -11,6 +11,7 @@ int main() {
         std::cout << "shutdown" << std::endl;
     }
     std::cout << "destroyed" << std::endl;
-    civ::SharedModelPool::shutdown_active();
+    if (civ::SharedModelPool::available())
+        civ::SharedModelPool::shutdown_active();
     return 0;
 }
