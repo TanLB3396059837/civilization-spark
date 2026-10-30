@@ -53,13 +53,26 @@
         "CIV_ENABLE_CUDA": "OFF",
         "CIV_ENABLE_POSTGRES": "OFF"
       }
+    },
+    {
+      "name": "state-learning",
+      "displayName": "State learning tests (no model/CUDA/PostgreSQL)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/state-learning",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CIV_ENABLE_LLAMA": "OFF",
+        "CIV_ENABLE_CUDA": "OFF",
+        "CIV_ENABLE_POSTGRES": "OFF"
+      }
     }
   ],
   "buildPresets": [
     { "name": "cpu-release", "configurePreset": "cpu-release" },
     { "name": "cpu-debug", "configurePreset": "cpu-debug" },
     { "name": "cuda-release", "configurePreset": "cuda-release" },
-    { "name": "minimal-cpu", "configurePreset": "minimal-cpu" }
+    { "name": "minimal-cpu", "configurePreset": "minimal-cpu" },
+    { "name": "state-learning", "configurePreset": "state-learning" }
   ],
   "testPresets": [
     {
@@ -70,6 +83,11 @@
     {
       "name": "cuda-release",
       "configurePreset": "cuda-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "state-learning",
+      "configurePreset": "state-learning",
       "output": { "outputOnFailure": true }
     }
   ]

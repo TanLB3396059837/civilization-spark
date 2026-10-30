@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(civilization_spark VERSION 3.3.0 LANGUAGES CXX)
+project(civilization_spark VERSION 3.3.9 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,6 +39,7 @@ endif()
 
 # ---- CUDA 可选 ----
 option(CIV_ENABLE_CUDA "Enable CUDA kernels when a CUDA toolkit is available" ON)
+option(CIV_ENABLE_LLAMA "Build and link the bundled llama.cpp backend" ON)
 include(CheckLanguage)
 if(CIV_ENABLE_CUDA)
     check_language(CUDA)
@@ -63,12 +64,14 @@ find_package(RDMA QUIET)
 # ============================================================
 # llama.cpp（GGML_CUDA，不再用 LLAMA_CUBLAS）
 # ============================================================
-if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/CMakeLists.txt)
+if(CIV_ENABLE_LLAMA AND EXISTS ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/CMakeLists.txt)
     set(GGML_CUDA   ${CIV_HAS_CUDA} CACHE BOOL "" FORCE)
     set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
     set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 
-    if(NOT MSVC)
+    if(MSVC)
+        set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+    else()
         set(GGML_OPENMP ON CACHE BOOL "" FORCE)
     endif()
 
@@ -78,7 +81,9 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/llama.cpp/CMakeLists.txt)
     set(LLAMA_CURL           OFF CACHE BOOL "" FORCE)
 
     if(WIN32)
-        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+        # Shared ggml/llama DLLs avoid Windows static-runtime teardown conflicts
+        # with libpq while still supporting full CUDA offload.
+        set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
     else()
         set(BUILD_SHARED_LIBS ON  CACHE BOOL "" FORCE)
     endif()
@@ -90,6 +95,20 @@ else()
     set(CIV_HAS_LLAMA OFF)
     message(STATUS "CIV: llama.cpp not found, using built-in transformer")
 endif()
+
+function(civ_copy_runtime_deps target)
+    if(WIN32 AND CIV_HAS_LLAMA)
+        foreach(dep llama ggml ggml-base ggml-cpu)
+            if(TARGET ${dep})
+                add_custom_command(TARGET ${target} POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        $<TARGET_FILE:${dep}>
+                        $<TARGET_FILE_DIR:${target}>
+                        VERBATIM)
+            endif()
+        endforeach()
+    endif()
+endfunction()
 
 # ---- 核心库 ----
 add_library(civ_core STATIC
@@ -165,12 +184,15 @@ endif()
 # ---- 应用 ----
 add_executable(civ_main apps/civilization_main.cpp)
 target_link_libraries(civ_main PRIVATE civ_sim)
+civ_copy_runtime_deps(civ_main)
 
 add_executable(civ_distributed apps/distributed_main.cpp)
 target_link_libraries(civ_distributed PRIVATE civ_sim)
+civ_copy_runtime_deps(civ_distributed)
 
 add_executable(civ_bench apps/benchmark_main.cpp)
 target_link_libraries(civ_bench PRIVATE civ_sim)
+civ_copy_runtime_deps(civ_bench)
 
 # ---- 测试 ----
 enable_testing()

@@ -11,9 +11,26 @@
 
 namespace civ {
 
+namespace {
+std::atomic<SharedModelPool*> g_active_pool{nullptr};
+}
+
 SharedModelPool& SharedModelPool::instance() {
     static SharedModelPool pool;
+    g_active_pool.store(&pool, std::memory_order_release);
     return pool;
+}
+
+bool SharedModelPool::available() noexcept {
+    SharedModelPool* pool =
+        g_active_pool.load(std::memory_order_acquire);
+    return pool != nullptr && pool->is_loaded();
+}
+
+void SharedModelPool::shutdown_active() {
+    SharedModelPool* pool =
+        g_active_pool.load(std::memory_order_acquire);
+    if (pool) pool->shutdown();
 }
 
 void SharedModelPool::load(const std::string& model_path,
@@ -268,17 +285,40 @@ std::string SharedModelPool::format_chat(const std::string& system,
 #endif
 }
 
-SharedModelPool::~SharedModelPool() {
+void SharedModelPool::shutdown() {
 #ifdef CIV_USE_LLAMA
+    std::lock_guard<std::mutex> lock(decode_mutex_);
     if (batch_cache_) {
         llama_batch_free(*batch_cache_);
         delete batch_cache_;
         batch_cache_ = nullptr;
     }
-    if (ctx_)   llama_free(ctx_);
-    if (model_) llama_model_free(model_);   // ★ 新 API 名
-    if (backend_initialized_) llama_backend_free();
+    if (ctx_) {
+        llama_free(ctx_);
+        ctx_ = nullptr;
+    }
+    if (model_) {
+        llama_model_free(model_);
+        model_ = nullptr;
+    }
+    if (backend_initialized_) {
+        llama_backend_free();
+        backend_initialized_ = false;
+    }
 #endif
+    loaded_ = false;
+#ifdef CIV_USE_LLAMA
+    vocab_ = nullptr;
+#endif
+    n_vocab_ = 0;
+    next_seq_.store(0, std::memory_order_relaxed);
+    for (auto& in_use : seq_in_use_)
+        in_use.store(false, std::memory_order_relaxed);
+    g_active_pool.store(nullptr, std::memory_order_release);
+}
+
+SharedModelPool::~SharedModelPool() {
+    shutdown();
 }
 
 } // namespace civ

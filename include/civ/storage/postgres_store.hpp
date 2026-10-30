@@ -80,6 +80,77 @@ struct ConversationMessageRecord {
 };
 
 // 一条 libpq 连接。非线程安全：每个线程使用独立实例。
+struct AgentMemoryRecord {
+    std::int64_t run_id = -1;
+    int          agent_index = -1;
+    int          round_no = 0;
+    std::int64_t local_id = 0;
+    std::string  kind;
+    std::string  source;
+    std::string  content;
+    float        importance = 0.0f;
+    float        retention = 0.0f;
+    int          recall_count = 0;
+    bool         consolidated = false;
+    std::string  embedding_json = "[]";
+    std::string  metadata_json = "{}";
+};
+
+struct AgentCognitionRecord {
+    std::int64_t run_id = -1;
+    int          agent_index = -1;
+    int          round_no = 0;
+    float        confidence = 0.0f;
+    float        coherence = 0.0f;
+    float        contradiction = 0.0f;
+    float        uncertainty = 0.0f;
+    float        curiosity = 0.0f;
+    std::string  active_strategy;
+    std::string  belief_json = "[]";
+    int          revisions = 0;
+};
+
+struct AgentConsciousnessRecord {
+    std::int64_t run_id = -1;
+    int          agent_index = -1;
+    int          round_no = 0;
+    float        self_model_confidence = 0.0f;
+    float        goal_alignment = 0.0f;
+    float        attention = 0.0f;
+    float        prediction_error = 0.0f;
+    float        integrity = 0.0f;
+    std::string  current_goal;
+    std::string  self_model;
+    int          reflections = 0;
+};
+
+struct TrainingSampleRecord {
+    std::int64_t run_id = -1;
+    int          agent_index = -1;
+    int          round_no = 0;
+    std::int64_t local_id = 0;
+    std::string  source;
+    std::string  instruction;
+    std::string  prompt;
+    std::string  response;
+    float        score = 0.0f;
+    std::string  feedback;
+    bool         accepted = false;
+    std::string  metadata_json = "{}";
+};
+
+struct SelfTrainingRunRecord {
+    std::int64_t run_id = -1;
+    int          agent_index = -1;
+    int          round_no = 0;
+    int          samples_seen = 0;
+    int          samples_accepted = 0;
+    float        average_score = 0.0f;
+    int          memory_count = 0;
+    std::string  active_strategy;
+    std::string  status = "running";
+};
+
 class PostgresStore {
 public:
     PostgresStore() = default;
@@ -115,6 +186,15 @@ public:
     std::int64_t add_conversation_message(
         const ConversationMessageRecord& message);
     void finish_conversation(std::int64_t conversation_id);
+
+    std::int64_t add_agent_memory(const AgentMemoryRecord& memory);
+    std::int64_t upsert_agent_cognition(
+        const AgentCognitionRecord& cognition);
+    std::int64_t upsert_agent_consciousness(
+        const AgentConsciousnessRecord& consciousness);
+    std::int64_t upsert_training_sample(const TrainingSampleRecord& sample);
+    std::int64_t upsert_self_training_run(const SelfTrainingRunRecord& run);
+    void finish_self_training_runs(std::int64_t run_id);
 
     std::int64_t create_benchmark(const std::string& name,
                                   const std::string& config_json);

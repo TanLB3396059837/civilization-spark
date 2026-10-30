@@ -11,6 +11,9 @@
 #include <limits>
 #include <string_view>
 #include <unordered_set>
+#include <filesystem>
+#include <fstream>
+#include <cctype>
 
 #ifdef CIV_USE_LLAMA
 #include <llama.h>
@@ -19,6 +22,101 @@
 namespace civ {
 
 namespace {
+
+const char* memory_kind_name(MemoryKind kind) {
+    switch (kind) {
+    case MemoryKind::Episode:    return "episode";
+    case MemoryKind::Feedback:   return "feedback";
+    case MemoryKind::Reflection: return "reflection";
+    case MemoryKind::World:      return "world";
+    case MemoryKind::Inherited:  return "inherited";
+    }
+    return "episode";
+}
+
+std::string escape_json(const std::string& text) {
+    std::string out;
+    out.reserve(text.size() + 16);
+    for (unsigned char c : text) {
+        switch (c) {
+        case '"':  out += "\\\""; break;
+        case '\\': out += "\\\\"; break;
+        case '\b': out += "\\b"; break;
+        case '\f': out += "\\f"; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default:
+            if (c < 0x20) {
+                static constexpr char kHex[] = "0123456789abcdef";
+                out += "\\u00";
+                out += kHex[(c >> 4) & 0x0F];
+                out += kHex[c & 0x0F];
+            } else {
+                out += static_cast<char>(c);
+            }
+            break;
+        }
+    }
+    return out;
+}
+
+std::vector<std::uint32_t> utf8_codepoints(const std::string& text) {
+    std::vector<std::uint32_t> result;
+    result.reserve(text.size());
+    for (std::size_t i = 0; i < text.size();) {
+        const auto c = static_cast<unsigned char>(text[i]);
+        if (c < 0x80) {
+            char value = static_cast<char>(c);
+            if (value >= 'A' && value <= 'Z')
+                value = static_cast<char>(value - 'A' + 'a');
+            if (!std::isspace(static_cast<unsigned char>(value)))
+                result.push_back(static_cast<std::uint32_t>(value));
+            ++i;
+            continue;
+        }
+
+        std::size_t width = 0;
+        std::uint32_t cp = 0;
+        if ((c & 0xE0) == 0xC0) {
+            width = 2;
+            cp = c & 0x1F;
+        } else if ((c & 0xF0) == 0xE0) {
+            width = 3;
+            cp = c & 0x0F;
+        } else if ((c & 0xF8) == 0xF0) {
+            width = 4;
+            cp = c & 0x07;
+        } else {
+            ++i;
+            continue;
+        }
+        if (i + width > text.size()) break;
+
+        bool valid = true;
+        for (std::size_t j = 1; j < width; ++j) {
+            const auto next = static_cast<unsigned char>(text[i + j]);
+            if ((next & 0xC0) != 0x80) {
+                valid = false;
+                break;
+            }
+            cp = (cp << 6) | (next & 0x3F);
+        }
+        if (valid && cp >= 0x80) result.push_back(cp);
+        i += valid ? width : 1;
+    }
+    return result;
+}
+
+std::string clip_utf8(const std::string& text, std::size_t limit) {
+    if (text.size() <= limit) return text;
+    std::size_t end = limit;
+    while (end > 0 &&
+           (static_cast<unsigned char>(text[end]) & 0xC0) == 0x80) {
+        --end;
+    }
+    return text.substr(0, end) + "...";
+}
 
 // 13 个智能体与“黄金裔—泰坦路径—原动力—模拟命途”的映射。
 // 顺序与 Simulation 中的 AgentId 0..12 一一对应。
@@ -139,7 +237,7 @@ LLMAgent::LLMAgent(AgentId id, const TransformerConfig& cfg, std::uint64_t seed)
     embedding_ = encode(first_cause_);
     memory_    = embedding_;
 
-    if (SharedModelPool::instance().is_loaded()) {
+    if (SharedModelPool::available()) {
         state_.seq_id = SharedModelPool::instance().allocate_seq_id();
     }
 
@@ -154,11 +252,23 @@ LLMAgent::LLMAgent(AgentId id, const TransformerConfig& cfg, std::uint64_t seed)
     if (const char* value = std::getenv("CIV_REPEAT_PENALTY"))
         repeat_penalty_ =
             std::clamp(std::strtof(value, nullptr), 1.0f, 2.0f);
+    if (const char* value = std::getenv("CIV_SELF_TRAIN"))
+        self_training_enabled_ = std::atoi(value) != 0;
+    if (const char* value = std::getenv("CIV_TRAINING_MIN_SCORE"))
+        training_threshold_ =
+            std::clamp(std::strtof(value, nullptr), 0.0f, 1.0f);
+
+    cognition_.belief = semantic_embedding(first_cause_);
+    consciousness_.current_goal =
+        "understand the first cause of life through " + simulated_path_;
+    consciousness_.self_model =
+        factor_name_ + " | " + ai_route_ + " | " + evolution_method_;
+    remember(first_cause_, MemoryKind::Episode, 0.90f, 0, "genesis");
 }
 
 LLMAgent::~LLMAgent() {
     // EOS 或析构时清理序列 KV
-    if (state_.seq_id >= 0 && SharedModelPool::instance().is_loaded()) {
+    if (state_.seq_id >= 0 && SharedModelPool::available()) {
         SharedModelPool::instance().reset_sequence(state_.seq_id);
     }
 }
@@ -186,6 +296,518 @@ std::string LLMAgent::decode(const Vector& vec) {
 }
 
 // 真多头注意力
+Vector LLMAgent::semantic_embedding(const std::string& text) const {
+    Vector result;
+    const auto codepoints = utf8_codepoints(text);
+    if (codepoints.empty()) return result;
+
+    auto add_feature = [&](std::uint32_t value, float weight) {
+        std::uint64_t h = 1469598103934665603ULL;
+        h ^= value;
+        h *= 1099511628211ULL;
+        h ^= h >> 33;
+        const std::size_t index = static_cast<std::size_t>(h % DIM);
+        const std::size_t index2 =
+            static_cast<std::size_t>((h >> 16) % DIM);
+        const float sign = ((h >> 8) & 1ULL) ? 1.0f : -1.0f;
+        result[index] += sign * weight;
+        result[index2] += (sign > 0.0f ? 0.5f : -0.5f) * weight;
+    };
+
+    for (std::size_t i = 0; i < codepoints.size(); ++i) {
+        add_feature(codepoints[i], 0.35f);
+        if (i + 1 < codepoints.size()) {
+            const std::uint32_t pair =
+                codepoints[i] * 1315423911u + codepoints[i + 1];
+            add_feature(pair, 1.0f);
+        }
+        if (i + 2 < codepoints.size()) {
+            const std::uint32_t triple =
+                codepoints[i] * 2654435761u +
+                codepoints[i + 1] * 2246822519u + codepoints[i + 2];
+            add_feature(triple, 1.25f);
+        }
+    }
+
+    float norm = 0.0f;
+    for (float value : result.v) norm += value * value;
+    norm = std::sqrt(norm);
+    if (norm > 1e-8f) {
+        for (std::size_t i = 0; i < DIM; ++i) result[i] /= norm;
+    }
+    return result;
+}
+
+float LLMAgent::semantic_similarity(const Vector& a, const Vector& b) const {
+    float dot = 0.0f;
+    float aa = 0.0f;
+    float bb = 0.0f;
+    for (std::size_t i = 0; i < DIM; ++i) {
+        dot += a[i] * b[i];
+        aa += a[i] * a[i];
+        bb += b[i] * b[i];
+    }
+    if (aa < 1e-8f || bb < 1e-8f) return 0.0f;
+    return std::clamp(dot / std::sqrt(aa * bb), -1.0f, 1.0f);
+}
+
+void LLMAgent::remember(const std::string& content, MemoryKind kind,
+                        float importance, int round_no,
+                        const std::string& source) {
+    if (content.empty()) return;
+    const Vector embedding = semantic_embedding(content);
+
+    for (auto& existing : memories_) {
+        if (existing.kind == kind &&
+            semantic_similarity(existing.embedding, embedding) > 0.96f) {
+            existing.content = content;
+            existing.importance =
+                std::clamp(std::max(existing.importance, importance), 0.0f, 1.0f);
+            existing.last_access_round = round_no;
+            existing.retention = std::min(1.0f, existing.retention + 0.08f);
+            existing.source = source;
+            return;
+        }
+    }
+
+    MemoryEntry entry;
+    entry.local_id = next_memory_id_++;
+    entry.round_no = round_no;
+    entry.last_access_round = round_no;
+    entry.kind = kind;
+    entry.source = source;
+    entry.content = content;
+    entry.embedding = embedding;
+    entry.importance = std::clamp(importance, 0.0f, 1.0f);
+    entry.retention = entry.importance;
+    memories_.push_back(std::move(entry));
+    prune_memories();
+}
+
+std::vector<const MemoryEntry*> LLMAgent::recall(const std::string& query,
+                                                 std::size_t top_k) {
+    std::vector<const MemoryEntry*> result;
+    if (memories_.empty() || top_k == 0) return result;
+
+    const Vector query_embedding = semantic_embedding(query);
+    std::vector<std::pair<float, std::size_t>> ranked;
+    ranked.reserve(memories_.size());
+    int newest_round = 0;
+    for (const auto& memory : memories_)
+        newest_round = std::max(newest_round, memory.round_no);
+
+    for (std::size_t i = 0; i < memories_.size(); ++i) {
+        const auto& memory = memories_[i];
+        const float similarity = std::max(
+            0.0f, semantic_similarity(query_embedding, memory.embedding));
+        const int age = std::max(0, newest_round - memory.last_access_round);
+        const float recency = 1.0f / (1.0f + 0.20f * static_cast<float>(age));
+        const float score = similarity * 0.72f +
+                            memory.retention * 0.18f + recency * 0.10f;
+        ranked.emplace_back(score, i);
+    }
+
+    std::sort(ranked.begin(), ranked.end(),
+              [](const auto& left, const auto& right) {
+                  return left.first > right.first;
+              });
+    const std::size_t count = std::min(top_k, ranked.size());
+    result.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        auto& memory = memories_[ranked[i].second];
+        ++memory.recall_count;
+        memory.last_access_round = newest_round;
+        memory.retention = std::min(1.0f, memory.retention + 0.025f);
+        result.push_back(&memory);
+    }
+    return result;
+}
+
+std::string LLMAgent::mind_context(const std::string& query,
+                                   std::size_t top_k) {
+    std::ostringstream oss;
+    const auto recalled = recall(query, top_k);
+    oss << "[记忆区] 记忆=" << memories_.size() << "，相关回忆=";
+    if (recalled.empty()) {
+        oss << "无";
+    } else {
+        for (std::size_t i = 0; i < recalled.size(); ++i) {
+            if (i > 0) oss << " | ";
+            oss << "[" << memory_kind_name(recalled[i]->kind) << "] "
+                << clip_utf8(recalled[i]->content, 72);
+        }
+    }
+    oss << "\n[认知区] 置信=" << std::fixed << std::setprecision(2)
+        << cognition_.confidence
+        << "，连贯=" << cognition_.coherence
+        << "，矛盾=" << cognition_.contradiction
+        << "，不确定=" << cognition_.uncertainty
+        << "，策略=" << cognition_.active_strategy;
+    oss << "\n[意识区/元认知] 自我模型置信="
+        << consciousness_.self_model_confidence
+        << "，目标对齐=" << consciousness_.goal_alignment
+        << "，注意=" << consciousness_.attention
+        << "，预测误差=" << consciousness_.prediction_error
+        << "，完整度=" << consciousness_.integrity
+        << "，目标=" << clip_utf8(consciousness_.current_goal, 56);
+    return oss.str();
+}
+
+float LLMAgent::evaluate_response(const std::string& response) const {
+    const auto codepoints = utf8_codepoints(response);
+    if (codepoints.size() < 6) return 0.05f;
+
+    std::unordered_set<std::uint32_t> unique;
+    unique.reserve(codepoints.size());
+    for (std::uint32_t cp : codepoints) unique.insert(cp);
+    const float diversity = std::clamp(
+        static_cast<float>(unique.size()) /
+            static_cast<float>(codepoints.size()),
+        0.0f, 1.0f);
+    const float length_quality = std::clamp(
+        static_cast<float>(codepoints.size()) / 72.0f, 0.0f, 1.0f);
+    const Vector response_embedding = semantic_embedding(response);
+    const float alignment = std::clamp(
+        semantic_similarity(response_embedding, cognition_.belief),
+        0.0f, 1.0f);
+
+    float score = 0.18f + length_quality * 0.20f +
+                  alignment * 0.34f + diversity * 0.18f;
+    static const char* const kRejectedMarkers[] = {
+        "###", "<|", "as an ai", "prompt:", "system:", "output format",
+        "要求：", "提示词", "输出格式", "严格遵循"
+    };
+    for (const char* marker : kRejectedMarkers) {
+        if (response.find(marker) != std::string::npos) {
+            score -= 0.32f;
+            break;
+        }
+    }
+    return std::clamp(score, 0.0f, 1.0f);
+}
+
+std::string LLMAgent::reflect(const TrainingExample& sample) const {
+    std::ostringstream oss;
+    oss << "自我反思：本轮得分 " << std::fixed << std::setprecision(2)
+        << sample.score << "；策略 " << cognition_.active_strategy
+        << "；置信 " << cognition_.confidence
+        << "；矛盾 " << cognition_.contradiction
+        << "。";
+    if (sample.score < 0.48f) {
+        oss << "下一次应先复述议题，再给出一个明确主张和一个可检验理由。";
+    } else if (cognition_.contradiction > 0.45f) {
+        oss << "下一次需要先处理现有信念的冲突，再扩展结论。";
+    } else if (cognition_.uncertainty > 0.55f) {
+        oss << "下一次应增加针对目标 Agent 的具体回应，减少泛化陈述。";
+    } else {
+        oss << "保留当前策略，并用记忆中的反例检验结论。";
+    }
+    return oss.str();
+}
+
+void LLMAgent::update_regions(const TrainingExample& sample, float novelty,
+                              float retrieval_relevance) {
+    const float error = 1.0f - sample.score;
+    const float previous = cognition_.belief.energy();
+    const Vector response_embedding = semantic_embedding(sample.response);
+    const float revision_pressure = std::clamp(
+        std::max(0.0f, 0.55f - sample.score) * 1.2f +
+            std::abs(sample.score - retrieval_relevance) * 0.25f,
+        0.0f, 1.0f);
+
+    cognition_.confidence = std::clamp(
+        cognition_.confidence * 0.82f + sample.score * 0.18f, 0.0f, 1.0f);
+    cognition_.uncertainty = std::clamp(
+        cognition_.uncertainty * 0.80f + error * 0.20f, 0.0f, 1.0f);
+    cognition_.coherence = std::clamp(
+        cognition_.coherence * 0.84f +
+            (sample.score * 0.65f + retrieval_relevance * 0.35f) * 0.16f,
+        0.0f, 1.0f);
+    cognition_.contradiction = std::clamp(
+        cognition_.contradiction * 0.78f + revision_pressure * 0.22f,
+        0.0f, 1.0f);
+    cognition_.curiosity = std::clamp(
+        cognition_.curiosity * 0.85f + novelty * 0.15f, 0.0f, 1.0f);
+
+    const float belief_rate = 0.04f + 0.10f * sample.score;
+    for (std::size_t i = 0; i < DIM; ++i) {
+        cognition_.belief[i] +=
+            belief_rate * (response_embedding[i] - cognition_.belief[i]);
+    }
+    ++cognition_.revisions;
+
+    if (cognition_.uncertainty > 0.58f)
+        cognition_.active_strategy = "targeted_exploration";
+    else if (cognition_.contradiction > 0.42f)
+        cognition_.active_strategy = "reflective_revision";
+    else if (novelty > 0.65f)
+        cognition_.active_strategy = "curiosity_guided_probe";
+    else
+        cognition_.active_strategy = "stable_exploitation";
+
+    consciousness_.prediction_error = std::clamp(
+        consciousness_.prediction_error * 0.80f + error * 0.20f,
+        0.0f, 1.0f);
+    consciousness_.attention = std::clamp(
+        consciousness_.attention * 0.75f + retrieval_relevance * 0.25f,
+        0.0f, 1.0f);
+    consciousness_.goal_alignment = std::clamp(
+        consciousness_.goal_alignment * 0.82f +
+            (sample.score * 0.6f + retrieval_relevance * 0.4f) * 0.18f,
+        0.0f, 1.0f);
+    consciousness_.integrity = std::clamp(
+        1.0f - cognition_.contradiction * 0.62f -
+            consciousness_.prediction_error * 0.28f,
+        0.0f, 1.0f);
+    consciousness_.self_model_confidence = std::clamp(
+        cognition_.confidence * 0.50f +
+            cognition_.coherence * 0.30f +
+            (1.0f - cognition_.uncertainty) * 0.20f,
+        0.0f, 1.0f);
+    ++consciousness_.reflections;
+
+    std::ostringstream model;
+    model << factor_name_ << "；策略=" << cognition_.active_strategy
+          << "；最近反思=" << sample.feedback;
+    consciousness_.self_model = model.str();
+
+    if (sample.source.find("catastrophe") != std::string::npos) {
+        consciousness_.current_goal =
+            "preserve the coreflame and reconstruct the world after catastrophe";
+    } else {
+        consciousness_.current_goal =
+            "understand the first cause of life through " + simulated_path_;
+    }
+
+    if (previous < 1e-8f) cognition_.belief = response_embedding;
+}
+
+SelfTrainingUpdate LLMAgent::self_train(const std::string& prompt,
+                                        const std::string& response,
+                                        int round_no,
+                                        const std::string& source,
+                                        float external_reward) {
+    SelfTrainingUpdate update;
+    const Vector query_embedding = semantic_embedding(prompt);
+
+    float max_similarity = 0.0f;
+    for (const auto& memory : memories_) {
+        max_similarity = std::max(
+            max_similarity,
+            semantic_similarity(query_embedding, memory.embedding));
+    }
+    update.retrieval_relevance = std::clamp(max_similarity, 0.0f, 1.0f);
+    update.novelty = std::clamp(1.0f - max_similarity, 0.0f, 1.0f);
+
+    float score = evaluate_response(response);
+    if (external_reward >= 0.0f) {
+        score = std::clamp(
+            score * 0.65f + std::clamp(external_reward, 0.0f, 1.0f) * 0.35f,
+            0.0f, 1.0f);
+    }
+    update.score = score;
+
+    TrainingExample sample;
+    sample.local_id = next_training_id_++;
+    sample.round_no = round_no;
+    sample.source = source;
+    sample.instruction =
+        "Stay in character as factor " + factor_name_ +
+        " and answer the user with a concrete first-cause argument.";
+    sample.prompt = prompt;
+    sample.response = response;
+    sample.score = score;
+
+    const std::string feedback = reflect(sample);
+    sample.feedback = feedback;
+    sample.accepted =
+        self_training_enabled_ && score >= training_threshold_ &&
+        source.find("fallback") == std::string::npos &&
+        source.find("internal_state") == std::string::npos;
+
+    remember("议题：" + prompt + "\n回应：" + response,
+             MemoryKind::Episode, 0.30f + score * 0.55f,
+             round_no, source);
+    remember(feedback, MemoryKind::Reflection,
+             0.55f + (1.0f - score) * 0.30f, round_no, source);
+
+    update_regions(sample, update.novelty, update.retrieval_relevance);
+    training_score_sum_ += score;
+    if (sample.accepted) ++accepted_training_samples_;
+
+    training_samples_.push_back(sample);
+    if (training_samples_.size() > 512) {
+        auto rejected = std::find_if(
+            training_samples_.begin(), training_samples_.end(),
+            [](const TrainingExample& item) { return !item.accepted; });
+        if (rejected != training_samples_.end())
+            training_samples_.erase(rejected);
+        else
+            training_samples_.erase(training_samples_.begin());
+    }
+    update.accepted = sample.accepted;
+    update.sample = std::move(sample);
+    return update;
+}
+
+void LLMAgent::prune_memories() {
+    constexpr std::size_t kMemoryCapacity = 96;
+    while (memories_.size() > kMemoryCapacity) {
+        auto worst = memories_.begin();
+        float worst_score = std::numeric_limits<float>::max();
+        for (auto it = memories_.begin(); it != memories_.end(); ++it) {
+            const float score = it->retention * 0.70f +
+                                it->importance * 0.20f +
+                                std::min(1.0f, it->recall_count * 0.02f) * 0.10f;
+            if (score < worst_score) {
+                worst_score = score;
+                worst = it;
+            }
+        }
+        memories_.erase(worst);
+    }
+}
+
+void LLMAgent::consolidate_memory(int round_no) {
+    for (auto& memory : memories_) {
+        const int age = std::max(0, round_no - memory.last_access_round);
+        const float recency = 1.0f / (1.0f + 0.18f * static_cast<float>(age));
+        const float recall_boost =
+            std::min(1.0f, static_cast<float>(memory.recall_count) * 0.06f);
+        memory.retention = std::clamp(
+            memory.importance * 0.55f + recency * 0.28f +
+                recall_boost * 0.17f,
+            0.0f, 1.0f);
+        if (memory.retention >= 0.62f ||
+            (memory.importance >= 0.72f && memory.recall_count > 0)) {
+            memory.consolidated = true;
+            memory.importance = std::min(1.0f, memory.importance + 0.01f);
+        }
+    }
+
+    std::erase_if(memories_, [round_no](const MemoryEntry& memory) {
+        const int age = std::max(0, round_no - memory.last_access_round);
+        return age >= 3 && memory.retention < 0.08f &&
+               memory.importance < 0.20f;
+    });
+    prune_memories();
+
+    const auto replay = recall(first_cause_, 3);
+    if (!replay.empty()) {
+        for (const auto* memory : replay) {
+            for (std::size_t i = 0; i < DIM; ++i) {
+                memory_[i] += 0.04f * (memory->embedding[i] - memory_[i]);
+            }
+        }
+    }
+    cognition_.coherence = std::clamp(
+        cognition_.coherence + 0.01f, 0.0f, 1.0f);
+}
+
+void LLMAgent::inherit_from(const LLMAgent& predecessor,
+                            float inheritance_ratio) {
+    const float ratio = std::clamp(inheritance_ratio, 0.0f, 1.0f);
+    std::vector<const MemoryEntry*> inherited;
+    inherited.reserve(predecessor.memories_.size());
+    for (const auto& memory : predecessor.memories_)
+        inherited.push_back(&memory);
+    std::sort(inherited.begin(), inherited.end(),
+              [](const MemoryEntry* left, const MemoryEntry* right) {
+                  return left->importance > right->importance;
+              });
+
+    const std::size_t count = std::min<std::size_t>(8, inherited.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        remember("Inherited from " + predecessor.factor_name_ + ": " +
+                     inherited[i]->content,
+                 MemoryKind::Inherited,
+                 inherited[i]->importance * ratio,
+                 inherited[i]->last_access_round,
+                 "inheritance:" + predecessor.factor_name_);
+    }
+
+    for (std::size_t i = 0; i < DIM; ++i) {
+        cognition_.belief[i] +=
+            ratio * 0.20f * (predecessor.cognition_.belief[i] -
+                             cognition_.belief[i]);
+    }
+    cognition_.confidence = std::clamp(
+        cognition_.confidence * (1.0f - ratio * 0.15f) +
+            predecessor.cognition_.confidence * ratio * 0.15f,
+        0.0f, 1.0f);
+    cognition_.uncertainty = std::clamp(
+        cognition_.uncertainty + ratio * 0.04f, 0.0f, 1.0f);
+    cognition_.active_strategy = "inherited_reflection";
+    consciousness_.attention = std::clamp(
+        consciousness_.attention + ratio * 0.08f, 0.0f, 1.0f);
+    consciousness_.integrity = std::clamp(
+        consciousness_.integrity * (1.0f - ratio * 0.10f) +
+            predecessor.consciousness_.integrity * ratio * 0.10f,
+        0.0f, 1.0f);
+    consciousness_.self_model =
+        consciousness_.self_model + " | inherited coreflame from " +
+        predecessor.factor_name_;
+    remember("Coreflame memory transfer from " + predecessor.factor_name_ +
+                 "; predecessor goal: " +
+                 predecessor.consciousness_.current_goal,
+             MemoryKind::Inherited, 0.78f * ratio,
+             predecessor.memories_.empty()
+                 ? 0 : predecessor.memories_.back().last_access_round,
+             "coreflame_transfer");
+}
+
+MindSnapshot LLMAgent::mind_snapshot() const {
+    MindSnapshot snapshot;
+    snapshot.memory_count = memories_.size();
+    snapshot.training_samples = training_samples_.size();
+    snapshot.accepted_samples = accepted_training_samples_;
+    snapshot.average_training_score =
+        training_samples_.empty()
+            ? 0.0f
+            : training_score_sum_ /
+                  static_cast<float>(training_samples_.size());
+    snapshot.efficiency = efficiency_;
+    snapshot.cognition = cognition_;
+    snapshot.consciousness = consciousness_;
+    return snapshot;
+}
+
+std::size_t LLMAgent::export_training_jsonl(const std::string& path,
+                                            std::int64_t run_id,
+                                            bool append) const {
+    if (path.empty()) return 0;
+    std::error_code error;
+    const std::filesystem::path output(path);
+    if (output.has_parent_path()) {
+        std::filesystem::create_directories(output.parent_path(), error);
+    }
+
+    std::ofstream file(path,
+                       std::ios::out | (append ? std::ios::app : std::ios::trunc));
+    if (!file) return 0;
+
+    std::size_t written = 0;
+    for (const auto& sample : training_samples_) {
+        if (!sample.accepted) continue;
+        file << "{\"id\":\"" << escape_json(factor_name_) << "-"
+             << sample.local_id << "\""
+             << ",\"run_id\":" << run_id
+             << ",\"agent_index\":" << static_cast<int>(id_)
+             << ",\"factor\":\"" << escape_json(factor_name_) << "\""
+             << ",\"round_no\":" << sample.round_no
+             << ",\"source\":\"" << escape_json(sample.source) << "\""
+             << ",\"instruction\":\"" << escape_json(sample.instruction) << "\""
+             << ",\"input\":\"" << escape_json(sample.prompt) << "\""
+             << ",\"output\":\"" << escape_json(sample.response) << "\""
+             << ",\"score\":" << std::fixed << std::setprecision(6)
+             << sample.score
+             << ",\"feedback\":\"" << escape_json(sample.feedback) << "\""
+             << ",\"accepted\":true}\n";
+        ++written;
+    }
+    return written;
+}
+
 void LLMAgent::multi_head_attention(const Vector& hidden,
                                     TransformerBlock& block, Vector& out) {
     constexpr std::size_t H = 4;
@@ -593,8 +1215,8 @@ std::string LLMAgent::take_result() {
 
 std::string LLMAgent::generate(const std::string& prompt, int max_tokens) {
 #ifdef CIV_USE_LLAMA
-    auto& pool = SharedModelPool::instance();
-    if (pool.is_loaded() && state_.seq_id >= 0) {
+    if (SharedModelPool::available() && state_.seq_id >= 0) {
+        auto& pool = SharedModelPool::instance();
         begin_generation(prompt, max_tokens, n_ctx_hint_);
 
         while (gen_remaining_ > 0) {
@@ -640,15 +1262,15 @@ std::string LLMAgent::generate(const std::string& prompt, int max_tokens) {
 std::string LLMAgent::generate_chat(const std::string& system,
                                     const std::string& user,
                                     int max_tokens) {
-    auto& pool = SharedModelPool::instance();
-    if (pool.is_loaded()) {
+    if (SharedModelPool::available()) {
+        auto& pool = SharedModelPool::instance();
         return generate(pool.format_chat(system, user), max_tokens);
     }
     return generate(user, max_tokens);
 }
 
 void LLMAgent::reset_dialogue_context() {
-    if (state_.seq_id >= 0 && SharedModelPool::instance().is_loaded()) {
+    if (state_.seq_id >= 0 && SharedModelPool::available()) {
         SharedModelPool::instance().reset_sequence(state_.seq_id);
     }
     state_.n_past = 0;

@@ -177,6 +177,107 @@ R"SQL(
 CREATE INDEX IF NOT EXISTS conversation_messages_conversation_idx
     ON conversation_messages (conversation_id, round_no, turn_no, message_id)
 )SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS agent_memory (
+    memory_id       BIGSERIAL PRIMARY KEY,
+    run_id          BIGINT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    agent_index     INTEGER NOT NULL,
+    round_no        INTEGER NOT NULL,
+    local_id        BIGINT NOT NULL,
+    kind            TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    content         TEXT NOT NULL,
+    importance      REAL NOT NULL,
+    retention       REAL NOT NULL,
+    recall_count    INTEGER NOT NULL DEFAULT 0,
+    consolidated    BOOLEAN NOT NULL DEFAULT FALSE,
+    embedding       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (run_id, agent_index, local_id)
+)
+)SQL",
+R"SQL(
+CREATE INDEX IF NOT EXISTS agent_memory_agent_idx
+    ON agent_memory (run_id, agent_index, round_no, importance DESC)
+)SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS agent_cognition (
+    snapshot_id       BIGSERIAL PRIMARY KEY,
+    run_id            BIGINT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    agent_index       INTEGER NOT NULL,
+    round_no          INTEGER NOT NULL,
+    confidence        REAL NOT NULL,
+    coherence         REAL NOT NULL,
+    contradiction     REAL NOT NULL,
+    uncertainty       REAL NOT NULL,
+    curiosity         REAL NOT NULL,
+    active_strategy   TEXT NOT NULL,
+    belief            JSONB NOT NULL DEFAULT '[]'::jsonb,
+    revisions         INTEGER NOT NULL DEFAULT 0,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (run_id, agent_index, round_no)
+)
+)SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS agent_consciousness (
+    snapshot_id             BIGSERIAL PRIMARY KEY,
+    run_id                  BIGINT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    agent_index             INTEGER NOT NULL,
+    round_no                INTEGER NOT NULL,
+    self_model_confidence   REAL NOT NULL,
+    goal_alignment          REAL NOT NULL,
+    attention               REAL NOT NULL,
+    prediction_error        REAL NOT NULL,
+    integrity               REAL NOT NULL,
+    current_goal            TEXT NOT NULL,
+    self_model              TEXT NOT NULL,
+    reflections             INTEGER NOT NULL DEFAULT 0,
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (run_id, agent_index, round_no)
+)
+)SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS training_samples (
+    sample_id       BIGSERIAL PRIMARY KEY,
+    run_id          BIGINT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    agent_index     INTEGER NOT NULL,
+    round_no        INTEGER NOT NULL,
+    local_id        BIGINT NOT NULL,
+    source          TEXT NOT NULL,
+    instruction     TEXT NOT NULL,
+    prompt          TEXT NOT NULL,
+    response        TEXT NOT NULL,
+    score           REAL NOT NULL,
+    feedback        TEXT NOT NULL,
+    accepted        BOOLEAN NOT NULL DEFAULT FALSE,
+    metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (run_id, agent_index, local_id)
+)
+)SQL",
+R"SQL(
+CREATE INDEX IF NOT EXISTS training_samples_agent_idx
+    ON training_samples (run_id, agent_index, accepted, score DESC)
+)SQL",
+R"SQL(
+CREATE TABLE IF NOT EXISTS self_training_runs (
+    self_training_id   BIGSERIAL PRIMARY KEY,
+    run_id             BIGINT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    agent_index        INTEGER NOT NULL,
+    round_no           INTEGER NOT NULL,
+    samples_seen       INTEGER NOT NULL DEFAULT 0,
+    samples_accepted   INTEGER NOT NULL DEFAULT 0,
+    average_score      REAL NOT NULL DEFAULT 0,
+    memory_count       INTEGER NOT NULL DEFAULT 0,
+    active_strategy    TEXT NOT NULL,
+    status             TEXT NOT NULL DEFAULT 'running',
+    started_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at        TIMESTAMPTZ,
+    UNIQUE (run_id, agent_index, round_no)
+)
+)SQL",
 };
 
 } // namespace
@@ -408,6 +509,138 @@ void PostgresStore::finish_conversation(std::int64_t conversation_id) {
         "UPDATE conversations SET finished_at=now() "
         "WHERE conversation_id=$1::bigint",
         {std::to_string(conversation_id)});
+}
+
+std::int64_t PostgresStore::add_agent_memory(
+    const AgentMemoryRecord& memory) {
+    return exec_id(
+        "INSERT INTO agent_memory "
+        "(run_id, agent_index, round_no, local_id, kind, source, content, "
+        " importance, retention, recall_count, consolidated, embedding, metadata) "
+        "VALUES ($1::bigint, $2::int, $3::int, $4::bigint, $5, $6, $7, "
+        "$8::real, $9::real, $10::int, $11::boolean, $12::jsonb, $13::jsonb) "
+        "ON CONFLICT (run_id, agent_index, local_id) DO UPDATE SET "
+        "round_no=EXCLUDED.round_no, kind=EXCLUDED.kind, source=EXCLUDED.source, "
+        "content=EXCLUDED.content, importance=EXCLUDED.importance, "
+        "retention=EXCLUDED.retention, recall_count=EXCLUDED.recall_count, "
+        "consolidated=EXCLUDED.consolidated, embedding=EXCLUDED.embedding, "
+        "metadata=EXCLUDED.metadata, updated_at=now() "
+        "RETURNING memory_id",
+        {std::to_string(memory.run_id), std::to_string(memory.agent_index),
+         std::to_string(memory.round_no), std::to_string(memory.local_id),
+         memory.kind, memory.source, memory.content,
+         std::to_string(memory.importance), std::to_string(memory.retention),
+         std::to_string(memory.recall_count),
+         memory.consolidated ? "true" : "false",
+         memory.embedding_json, memory.metadata_json});
+}
+
+std::int64_t PostgresStore::upsert_agent_cognition(
+    const AgentCognitionRecord& cognition) {
+    return exec_id(
+        "INSERT INTO agent_cognition "
+        "(run_id, agent_index, round_no, confidence, coherence, contradiction, "
+        " uncertainty, curiosity, active_strategy, belief, revisions) "
+        "VALUES ($1::bigint, $2::int, $3::int, $4::real, $5::real, $6::real, "
+        "$7::real, $8::real, $9, $10::jsonb, $11::int) "
+        "ON CONFLICT (run_id, agent_index, round_no) DO UPDATE SET "
+        "confidence=EXCLUDED.confidence, coherence=EXCLUDED.coherence, "
+        "contradiction=EXCLUDED.contradiction, "
+        "uncertainty=EXCLUDED.uncertainty, curiosity=EXCLUDED.curiosity, "
+        "active_strategy=EXCLUDED.active_strategy, belief=EXCLUDED.belief, "
+        "revisions=EXCLUDED.revisions, updated_at=now() "
+        "RETURNING snapshot_id",
+        {std::to_string(cognition.run_id),
+         std::to_string(cognition.agent_index),
+         std::to_string(cognition.round_no),
+         std::to_string(cognition.confidence),
+         std::to_string(cognition.coherence),
+         std::to_string(cognition.contradiction),
+         std::to_string(cognition.uncertainty),
+         std::to_string(cognition.curiosity),
+         cognition.active_strategy, cognition.belief_json,
+         std::to_string(cognition.revisions)});
+}
+
+std::int64_t PostgresStore::upsert_agent_consciousness(
+    const AgentConsciousnessRecord& consciousness) {
+    return exec_id(
+        "INSERT INTO agent_consciousness "
+        "(run_id, agent_index, round_no, self_model_confidence, "
+        " goal_alignment, attention, prediction_error, integrity, "
+        " current_goal, self_model, reflections) "
+        "VALUES ($1::bigint, $2::int, $3::int, $4::real, $5::real, $6::real, "
+        "$7::real, $8::real, $9, $10, $11::int) "
+        "ON CONFLICT (run_id, agent_index, round_no) DO UPDATE SET "
+        "self_model_confidence=EXCLUDED.self_model_confidence, "
+        "goal_alignment=EXCLUDED.goal_alignment, attention=EXCLUDED.attention, "
+        "prediction_error=EXCLUDED.prediction_error, "
+        "integrity=EXCLUDED.integrity, current_goal=EXCLUDED.current_goal, "
+        "self_model=EXCLUDED.self_model, reflections=EXCLUDED.reflections, "
+        "updated_at=now() RETURNING snapshot_id",
+        {std::to_string(consciousness.run_id),
+         std::to_string(consciousness.agent_index),
+         std::to_string(consciousness.round_no),
+         std::to_string(consciousness.self_model_confidence),
+         std::to_string(consciousness.goal_alignment),
+         std::to_string(consciousness.attention),
+         std::to_string(consciousness.prediction_error),
+         std::to_string(consciousness.integrity),
+         consciousness.current_goal, consciousness.self_model,
+         std::to_string(consciousness.reflections)});
+}
+
+std::int64_t PostgresStore::upsert_training_sample(
+    const TrainingSampleRecord& sample) {
+    return exec_id(
+        "INSERT INTO training_samples "
+        "(run_id, agent_index, round_no, local_id, source, instruction, "
+        " prompt, response, score, feedback, accepted, metadata) "
+        "VALUES ($1::bigint, $2::int, $3::int, $4::bigint, $5, $6, $7, $8, "
+        "$9::real, $10, $11::boolean, $12::jsonb) "
+        "ON CONFLICT (run_id, agent_index, local_id) DO UPDATE SET "
+        "round_no=EXCLUDED.round_no, source=EXCLUDED.source, "
+        "instruction=EXCLUDED.instruction, prompt=EXCLUDED.prompt, "
+        "response=EXCLUDED.response, score=EXCLUDED.score, "
+        "feedback=EXCLUDED.feedback, accepted=EXCLUDED.accepted, "
+        "metadata=EXCLUDED.metadata RETURNING sample_id",
+        {std::to_string(sample.run_id), std::to_string(sample.agent_index),
+         std::to_string(sample.round_no), std::to_string(sample.local_id),
+         sample.source, sample.instruction, sample.prompt, sample.response,
+         std::to_string(sample.score), sample.feedback,
+         sample.accepted ? "true" : "false", sample.metadata_json});
+}
+
+std::int64_t PostgresStore::upsert_self_training_run(
+    const SelfTrainingRunRecord& run) {
+    return exec_id(
+        "INSERT INTO self_training_runs "
+        "(run_id, agent_index, round_no, samples_seen, samples_accepted, "
+        " average_score, memory_count, active_strategy, status, finished_at) "
+        "VALUES ($1::bigint, $2::int, $3::int, $4::int, $5::int, "
+        "$6::real, $7::int, $8, $9, "
+        "CASE WHEN $9='finished' THEN now() ELSE NULL END) "
+        "ON CONFLICT (run_id, agent_index, round_no) DO UPDATE SET "
+        "samples_seen=EXCLUDED.samples_seen, "
+        "samples_accepted=EXCLUDED.samples_accepted, "
+        "average_score=EXCLUDED.average_score, "
+        "memory_count=EXCLUDED.memory_count, "
+        "active_strategy=EXCLUDED.active_strategy, status=EXCLUDED.status, "
+        "finished_at=CASE WHEN EXCLUDED.status='finished' "
+        "THEN now() ELSE self_training_runs.finished_at END "
+        "RETURNING self_training_id",
+        {std::to_string(run.run_id), std::to_string(run.agent_index),
+         std::to_string(run.round_no), std::to_string(run.samples_seen),
+         std::to_string(run.samples_accepted),
+         std::to_string(run.average_score), std::to_string(run.memory_count),
+         run.active_strategy, run.status});
+}
+
+void PostgresStore::finish_self_training_runs(std::int64_t run_id) {
+    exec_command(
+        "UPDATE self_training_runs SET status='finished', finished_at=now() "
+        "WHERE run_id=$1::bigint",
+        {std::to_string(run_id)});
 }
 
 std::int64_t PostgresStore::create_benchmark(const std::string& name,

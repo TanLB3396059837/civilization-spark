@@ -7,6 +7,7 @@
 #include <vector>
 #include <array>
 #include <deque>
+#include <cstdint>
 
 namespace civ {
 
@@ -51,6 +52,82 @@ struct AgentState {
 
     static constexpr std::size_t MAX_HISTORY   = 4096;
     static constexpr std::size_t WARMUP_TOKENS = 128;
+};
+
+enum class MemoryKind {
+    Episode,
+    Feedback,
+    Reflection,
+    World,
+    Inherited
+};
+
+struct MemoryEntry {
+    std::uint64_t local_id = 0;
+    int round_no = 0;
+    int last_access_round = 0;
+    MemoryKind kind = MemoryKind::Episode;
+    std::string source;
+    std::string content;
+    Vector embedding;
+    float importance = 0.5f;
+    float retention = 1.0f;
+    int recall_count = 0;
+    bool consolidated = false;
+};
+
+// Operational belief state. This is not a claim of human-like consciousness.
+struct CognitionRegion {
+    float confidence = 0.35f;
+    float coherence = 0.50f;
+    float contradiction = 0.00f;
+    float uncertainty = 0.65f;
+    float curiosity = 0.55f;
+    std::string active_strategy = "observe";
+    Vector belief;
+    int revisions = 0;
+};
+
+// Meta-cognitive state used to regulate attention, goals and self-training.
+struct ConsciousnessRegion {
+    float self_model_confidence = 0.20f;
+    float goal_alignment = 0.50f;
+    float attention = 0.50f;
+    float prediction_error = 0.50f;
+    float integrity = 1.00f;
+    std::string current_goal = "understand the first cause of life";
+    std::string self_model = "initial self-model";
+    int reflections = 0;
+};
+
+struct TrainingExample {
+    std::uint64_t local_id = 0;
+    int round_no = 0;
+    std::string source;
+    std::string instruction;
+    std::string prompt;
+    std::string response;
+    float score = 0.0f;
+    std::string feedback;
+    bool accepted = false;
+};
+
+struct SelfTrainingUpdate {
+    float score = 0.0f;
+    float novelty = 0.0f;
+    float retrieval_relevance = 0.0f;
+    bool accepted = false;
+    TrainingExample sample;
+};
+
+struct MindSnapshot {
+    std::size_t memory_count = 0;
+    std::size_t training_samples = 0;
+    std::size_t accepted_samples = 0;
+    float average_training_score = 0.0f;
+    float efficiency = 1.0f;
+    CognitionRegion cognition;
+    ConsciousnessRegion consciousness;
 };
 
 class LLMAgent {
@@ -98,6 +175,35 @@ public:
     std::string express_first_cause() const;
     std::string answer_first_cause() const;
 
+    // Memory, cognition and meta-cognitive self-training regions.
+    void remember(const std::string& content, MemoryKind kind,
+                  float importance, int round_no,
+                  const std::string& source = "internal");
+    std::vector<const MemoryEntry*> recall(const std::string& query,
+                                           std::size_t top_k = 3);
+    std::string mind_context(const std::string& query,
+                             std::size_t top_k = 3);
+    SelfTrainingUpdate self_train(const std::string& prompt,
+                                  const std::string& response,
+                                  int round_no,
+                                  const std::string& source,
+                                  float external_reward = -1.0f);
+    void consolidate_memory(int round_no);
+    void inherit_from(const LLMAgent& predecessor, float inheritance_ratio = 0.5f);
+    MindSnapshot mind_snapshot() const;
+    std::size_t export_training_jsonl(const std::string& path,
+                                      std::int64_t run_id,
+                                      bool append = false) const;
+
+    const std::deque<MemoryEntry>& memories() const noexcept { return memories_; }
+    const CognitionRegion& cognition() const noexcept { return cognition_; }
+    const ConsciousnessRegion& consciousness() const noexcept {
+        return consciousness_;
+    }
+    const std::vector<TrainingExample>& training_samples() const noexcept {
+        return training_samples_;
+    }
+
     // 按因子自带的 AI 学习路线执行一次进化。
     // collective: 当前存活因子的平均表征；rival: 最强因子的表征。
     void evolve(const Vector& experience, const Vector& collective,
@@ -137,6 +243,17 @@ private:
     std::uint32_t mutation_count_ = 0;
     QuantumRNG rng_;
 
+    std::deque<MemoryEntry> memories_;
+    CognitionRegion cognition_;
+    ConsciousnessRegion consciousness_;
+    std::vector<TrainingExample> training_samples_;
+    std::uint64_t next_memory_id_ = 1;
+    std::uint64_t next_training_id_ = 1;
+    std::size_t accepted_training_samples_ = 0;
+    float training_score_sum_ = 0.0f;
+    bool self_training_enabled_ = true;
+    float training_threshold_ = 0.62f;
+
     AgentState state_;
 
     int  gen_remaining_ = 0;
@@ -160,6 +277,13 @@ private:
     std::string token_to_text(std::int32_t token);
     bool maybe_rebuild_kv(int needed_tokens);
     bool warmup_kv_from_history();
+    Vector semantic_embedding(const std::string& text) const;
+    float semantic_similarity(const Vector& a, const Vector& b) const;
+    float evaluate_response(const std::string& response) const;
+    std::string reflect(const TrainingExample& sample) const;
+    void update_regions(const TrainingExample& sample, float novelty,
+                        float retrieval_relevance);
+    void prune_memories();
 };
 
 } // namespace civ

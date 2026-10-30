@@ -47,8 +47,10 @@ It is not intended to replace a general-purpose chat product.
 | Shared inference | `SharedModelPool` + multi-sequence batch decode + KV sliding window |
 | 13 learning routes | Consensus, constrained RL, replay, evolution strategies, adversarial, distillation, reward, critique, regularization, competition, pruning, exploration, meta-learning |
 | Compressed messaging | KFL-M v4, CRC8 / CRC32C, TCP / SHM / RoCEv2 interfaces |
-| Persistence | PostgreSQL 18 / libpq: runs, agents, rounds, events, metrics, benchmarks |
+| Persistence | PostgreSQL 18 / libpq: runs, conversations, agent memory/cognition/meta-cognition, training samples, events, metrics, benchmarks |
+| Self-training | Semantic episodic memory, cognitive belief updates, computational meta-cognition, accepted-sample JSONL export |
 | GPU | llama.cpp CUDA backend + custom elementwise / softmax attention |
+| GPU scheduling | 13-opening micro-batch, causally ordered rebuttals, and utilization capture |
 | Benchmarking | Multi-seed, multi-repeat runs written directly to PostgreSQL |
 | Reproducibility | Fixed seeds, deterministic evolution, queryable run records |
 
@@ -65,6 +67,8 @@ flowchart LR
     F --> G
     D --> H[Answers / debate / elimination]
     H --> G
+    A --> M[Memory / cognition / meta-cognition]
+    M --> G
     G --> I[Benchmark / replay / analysis]
 ```
 
@@ -81,6 +85,22 @@ and recent rebuttals, and directly responds to another agent. PostgreSQL stores 
 speaker, target, phase, and `reply_to_message_id` chain.
 
 See [the conversation guide (Chinese)](docs/CONVERSATION.md).
+
+## Memory, cognition, and computational meta-cognition
+
+Each factor has three persistent regions:
+
+- **Memory:** semantically searchable episodic, reflective, world, and inherited
+  traces with importance, decay, consolidation, recall and a bounded ring buffer.
+- **Cognition:** a dynamic belief vector plus confidence, coherence,
+  contradiction, uncertainty, curiosity and active learning strategy.
+- **Consciousness region:** an auditable computational meta-cognition state
+  containing a self-model, goals, attention, prediction error and integrity. It
+  does not claim subjective consciousness.
+
+Accepted model responses are exported as JSONL for a separate LoRA training job.
+The base GGUF weights are not modified inside ordinary conversation turns.
+See [Self-training and the three regions](docs/SELF_TRAINING.md).
 
 ## The 13 factors
 
@@ -180,6 +200,10 @@ docker run --rm --gpus all civilization-spark
 | `CIV_LLAMA_MODEL` | GGUF model path | `models/Spark-X2.5-4B-Q4_K_M.gguf` |
 | `CIV_N_CTX` | Context length per agent | `512` for 6 GB VRAM |
 | `CIV_N_GPU_LAYERS` | Layers offloaded to GPU | `99` |
+| `CIV_WORLD_MODE` | Amphoreus-inspired world layer | `amphoreus` |
+| `CIV_SELF_TRAIN` | Enable online state learning and sample filtering | `1` |
+| `CIV_TRAINING_MIN_SCORE` | Minimum accepted self-training score | `0.62` |
+| `CIV_TRAINING_EXPORT` | Accepted-sample JSONL path | `training_data/spark.jsonl` |
 | `CIV_PG_DSN` | PostgreSQL connection string | `host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass` |
 | `CIV_BENCH_SEEDS` | Benchmark seed list | `42,43,44` |
 | `CIV_BENCH_REPEAT` | Repeats per seed | `2` |
@@ -198,7 +222,9 @@ Local test machine: AMD Ryzen 7 5800H, 32 GB RAM, NVIDIA RTX 3060 Laptop 6 GB.
 | --- | --- |
 | Core unit tests | 22 passed |
 | Factor / evolution tests | 5 passed |
+| Memory / cognition / meta-cognition tests | 10 passed |
 | PostgreSQL CRUD + concurrency | Passed with 4 connections |
+| PostgreSQL three-region tables | Memory, cognition, meta-cognition, training samples and run summaries passed |
 | PostgreSQL primary/standby | Primary writes visible on standby; standby writes rejected |
 | CUDA elementwise | Max error `0` |
 | CUDA attention softmax | Max error `7.45e-09` |
@@ -230,6 +256,7 @@ third_party/       llama.cpp submodule
 - [x] PostgreSQL persistence and primary/standby replication
 - [x] GPU inference and CUDA kernel validation
 - [x] Multi-seed benchmark
+- [x] Memory, cognition, computational meta-cognition and self-training export
 - [ ] Modular multi-agent inference runtime
 - [ ] RDMA throughput and latency measurements
 - [ ] Automated benchmark reports and charts
@@ -243,6 +270,8 @@ third_party/       llama.cpp submodule
 - [Quantum computer testing (Chinese)](docs/QUANTUM.md)
 - [RoCEv2 testing (Chinese)](docs/RDMA.md)
 - [True roundtable conversation mode (Chinese)](docs/CONVERSATION.md)
+- [Amphoreus-inspired re-creation mode](docs/AMPHOREUS_MODE.md)
+- [Self-training and the three cognitive regions](docs/SELF_TRAINING.md)
 - [Contributing](CONTRIBUTING.md) · [简体中文](CONTRIBUTING.zh-CN.md) · [Русский](CONTRIBUTING.ru.md)
 - [Security policy](SECURITY.md)
 

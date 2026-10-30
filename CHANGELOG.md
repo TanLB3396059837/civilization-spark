@@ -1,5 +1,51 @@
 # Changelog
 
+## v3.3.9 - 2026-10-30
+
+### Added
+
+- Bounded episodic memory with semantic recall, retrieval relevance, decay,
+  consolidation, forgetting and inheritance through the coreflame.
+- Dynamic cognition region with belief updates, confidence, coherence,
+  contradiction, uncertainty, curiosity and strategy selection.
+- Computational meta-cognition region with self-model confidence, goals,
+  attention, prediction error and integrity.
+- Online self-training loop that writes reflections and accepted JSONL samples
+  for later LoRA fine-tuning.
+- PostgreSQL tables: `agent_memory`, `agent_cognition`,
+  `agent_consciousness`, `training_samples`, `self_training_runs`.
+- `CIV_SELF_TRAIN`, `CIV_TRAINING_MIN_SCORE` and `CIV_TRAINING_EXPORT`.
+- Optional `CIV_ENABLE_LLAMA=OFF` build for lightweight state-learning tests.
+- 13 roundtable openings now use one GPU micro-batch while rebuttals remain
+  causally ordered.
+- `linux_gpu_acceptance.sh` samples `nvidia-smi` every 500 ms and enforces a
+  configurable 95% average GPU-utilization target.
+
+### Fixed
+
+- Release-process shutdown could return `0xC0000409` after a completed
+  simulation. Deterministic shutdown now releases agents and storage before
+  process teardown.
+- Windows builds now use shared ggml/llama DLLs with post-build copying and
+  disable ggml OpenMP, avoiding the release static-runtime teardown conflict.
+- CPU fallback replies are stored for audit but can no longer enter the
+  accepted training dataset.
+- World catastrophe events now record whether the text came from the LLM or a
+  deterministic fallback.
+
+## v3.3.8 - 2026-10-30
+
+### Added
+
+- Amphoreus-inspired re-creation world mode: `CIV_WORLD_MODE=amphoreus`.
+- Rotating Titan trials with path resonance bonuses.
+- Coreflame inheritance when an agent is eliminated.
+- Black-tide pressure, corruption, stability, and world-memory mechanics.
+- AI-generated world destruction form with a surviving factor as narrator,
+  persisted as `world_catastrophe` with severity.
+- Re-creation phases and multiple world endings.
+- Metrics and events for trials, flame transfer, re-creation, and endings.
+
 ## v3.3.6 - 2026-10-30
 
 ### Added

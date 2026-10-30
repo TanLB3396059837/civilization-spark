@@ -40,3 +40,4 @@ __pycache__/
 
 # Local PostgreSQL data
 /pgdata/
+/training_data/

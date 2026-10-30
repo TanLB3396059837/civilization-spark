@@ -14,6 +14,8 @@ RUN_BENCH=0
 RUN_CUDA_TEST=0
 NO_MODEL=0
 USE_POSTGRES=1
+USE_ROUNDTABLE=0
+USE_AMPHOREUS=0
 
 for arg in "$@"; do
     case "$arg" in
@@ -22,8 +24,10 @@ for arg in "$@"; do
         --cuda-test)    RUN_CUDA_TEST=1 ;;
         --no-model)     NO_MODEL=1 ;;
         --no-postgres)  USE_POSTGRES=0 ;;
+        --roundtable)   USE_ROUNDTABLE=1 ;;
+        --amphoreus)    USE_AMPHOREUS=1 ;;
         -h|--help)
-            echo "用法: $0 [--skip-install] [--no-model] [--no-postgres] [--benchmark] [--cuda-test]"
+            echo "用法: $0 [--skip-install] [--no-model] [--no-postgres] [--roundtable] [--amphoreus] [--benchmark] [--cuda-test]"
             exit 0
             ;;
         *) echo "未知参数: $arg"; exit 2 ;;
@@ -131,13 +135,27 @@ if [ "${VRAM:-0}" -le 6144 ] 2>/dev/null; then
     DEFAULT_CTX=512
 elif [ "${VRAM:-0}" -le 8192 ] 2>/dev/null; then
     DEFAULT_CTX=1024
-else
+elif [ "${VRAM:-0}" -le 24576 ] 2>/dev/null; then
     DEFAULT_CTX=2048
+elif [ "${VRAM:-0}" -le 49152 ] 2>/dev/null; then
+    DEFAULT_CTX=4096
+else
+    DEFAULT_CTX=8192
 fi
 export CIV_N_CTX="${CIV_N_CTX:-$DEFAULT_CTX}"
 export CIV_N_GPU_LAYERS="${CIV_N_GPU_LAYERS:-$([ "$ENABLE_CUDA" = ON ] && echo 99 || echo 0)}"
+export CIV_SELF_TRAIN="${CIV_SELF_TRAIN:-1}"
+mkdir -p "$ROOT/training_data"
+export CIV_TRAINING_EXPORT="${CIV_TRAINING_EXPORT:-$ROOT/training_data/self_training_$(date +%Y%m%d_%H%M%S).jsonl}"
+if [ "$USE_ROUNDTABLE" -eq 1 ]; then
+    export CIV_DEBATE_MODE=roundtable
+fi
+if [ "$USE_AMPHOREUS" -eq 1 ]; then
+    export CIV_WORLD_MODE=amphoreus
+fi
 
 echo "[5/5] 运行 (n_ctx/agent=$CIV_N_CTX, gpu_layers=$CIV_N_GPU_LAYERS)"
+echo "训练样本导出: $CIV_TRAINING_EXPORT"
 if [ "$RUN_CUDA_TEST" -eq 1 ] && [ -x "$BUILD_DIR/tests/civ_cuda_tests" ]; then
     "$BUILD_DIR/tests/civ_cuda_tests"
 fi

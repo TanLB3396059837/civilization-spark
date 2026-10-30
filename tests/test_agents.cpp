@@ -1,6 +1,8 @@
 #include "civ/ai/llm_agent.hpp"
 #include <array>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -75,5 +77,66 @@ int main() {
 
     std::cout << "\n结果：" << (g_failed == 0 ? "全部通过" : "存在失败")
               << std::endl;
+    std::cout << "\n========== memory / cognition / meta-cognition =========="
+              << std::endl;
+    auto& memory_agent = *agents[2];
+    const std::string training_prompt =
+        "Explain the first cause of life from the perspective of memory.";
+    const std::string training_response =
+        memory_agent.express_first_cause() +
+        " Shared memory preserves experience across generations and lets "
+        "the agent revise its beliefs.";
+    const auto update = memory_agent.self_train(
+        training_prompt, training_response, 1, "unit_test", 0.95f);
+    const auto mind = memory_agent.mind_snapshot();
+    CHECK(update.score > 0.0f && update.score <= 1.0f,
+          "self-training reward is bounded");
+    CHECK(mind.memory_count >= 2, "episodic memory was written");
+    CHECK(mind.cognition.revisions > 0, "cognition region was updated");
+    CHECK(mind.consciousness.reflections > 0,
+          "meta-cognitive region was updated");
+    CHECK(!memory_agent.mind_context(training_prompt, 3).empty(),
+          "memory retrieval builds internal context");
+
+    const auto recalled = memory_agent.recall("memory first cause", 4);
+    CHECK(!recalled.empty(), "semantic memory recall returns results");
+
+    LLMAgent successor(static_cast<AgentId>(4), cfg, 42);
+    const std::size_t before_inheritance = successor.memories().size();
+    successor.inherit_from(memory_agent, 0.5f);
+    bool inherited_found = false;
+    for (const auto& memory : successor.memories()) {
+        if (memory.kind == MemoryKind::Inherited) inherited_found = true;
+    }
+    CHECK(successor.memories().size() > before_inheritance &&
+              inherited_found,
+          "coreflame inheritance transfers memories and beliefs");
+
+    for (int i = 0; i < 110; ++i) {
+        memory_agent.remember(
+            "episode-" + std::to_string(i) +
+                " a sufficiently different memory payload",
+            MemoryKind::Episode, 0.2f + (i % 5) * 0.05f, 2,
+            "capacity_test");
+    }
+    memory_agent.consolidate_memory(3);
+    CHECK(memory_agent.memories().size() <= 96,
+          "episodic memory ring buffer is bounded");
+
+    const std::filesystem::path export_path =
+        std::filesystem::temp_directory_path() /
+        "civilization_spark_agent_training_test.jsonl";
+    const auto exported =
+        memory_agent.export_training_jsonl(export_path.string(), 999, false);
+    CHECK(exported > 0, "accepted self-training sample was exported");
+    std::ifstream exported_file(export_path);
+    std::string first_line;
+    std::getline(exported_file, first_line);
+    CHECK(first_line.find("\"accepted\":true") != std::string::npos,
+          "exported JSONL contains accepted sample");
+    exported_file.close();
+    std::error_code remove_error;
+    std::filesystem::remove(export_path, remove_error);
+
     return g_failed == 0 ? 0 : 1;
 }

@@ -26,11 +26,14 @@ namespace civ {
     class SharedModelPool {
     public:
         static SharedModelPool& instance();
+        static bool available() noexcept;
+        static void shutdown_active();
 
         void load(const std::string& model_path, int n_ctx = 2048,
                   int n_gpu_layers = 99);
 
         bool is_loaded() const noexcept { return loaded_; }
+        void shutdown();
 
         static constexpr int MAX_SEQ = 16;
         int allocate_seq_id();

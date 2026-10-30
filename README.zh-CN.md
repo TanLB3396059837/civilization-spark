@@ -39,8 +39,10 @@ KV 上下文，但各自绑定不同的现代 AI 学习路线和独有进化方�
 | 共享推理 | `SharedModelPool` + 多序列 batch decode + KV 滑动窗口 |
 | 13 条学习路线 | 共识、约束 RL、经验回放、进化策略、对抗、蒸馏、奖励、批判、正则、竞争、剪枝、探索、元学习 |
 | 压缩通信 | KFL-M v4、CRC8 / CRC32C、TCP / SHM / RoCEv2 接口 |
-| 持久化 | PostgreSQL 18 / libpq：run、agent、round、event、metric、benchmark |
+| 持久化 | PostgreSQL 18 / libpq：运行、对话、Agent 三区状态、训练样本、事件、指标与 benchmark |
+| 自我训练 | 语义情景记忆、认知信念更新、计算型元认知、accepted 训练样本 JSONL 导出 |
 | GPU | llama.cpp CUDA 后端 + 自定义 elementwise / softmax attention |
+| GPU 调度 | 13 条开场 micro-batch、保持因果顺序的回应、GPU 利用率采样 |
 | 基准测试 | 多 seed、多 repeat、结果自动写入 PostgreSQL |
 | 可复现 | 固定 seed、确定性进化和可查询的运行记录 |
 
@@ -57,6 +59,8 @@ flowchart LR
     F --> G
     D --> H[回答 / 辩论 / 淘汰]
     H --> G
+    A --> M[记忆区 / 认知区 / 元认知区]
+    M --> G
     G --> I[Benchmark / 回放 / 分析]
 ```
 
@@ -72,6 +76,20 @@ export CIV_MAX_ROUNDS=1
 Agent。PostgreSQL 会记录发言者、目标、阶段和 `reply_to_message_id` 对话链。
 
 详细说明：[docs/CONVERSATION.md](docs/CONVERSATION.md)
+
+## 记忆区、认知区与意识区
+
+每个因子都有三类持续状态：
+
+- **记忆区**：情景、反思、世界事件和火种传承记忆；支持语义召回、重要度衰减、
+  巩固、遗忘和容量上限。
+- **认知区**：动态信念向量，以及置信度、连贯度、矛盾度、不确定度、好奇度和
+  当前学习策略。
+- **意识区（计算型元认知）**：自我模型置信度、目标对齐、注意分配、预测误差和
+  状态完整度。这里不宣称产生主观意识。
+
+模型真实生成的合格回答会导出为 JSONL，供后续 LoRA 离线训练；普通对话回合不会
+直接修改基础 GGUF 权重。详见 [自我训练与三区文档](docs/SELF_TRAINING.md)。
 
 ## 13 个因子
 
@@ -167,6 +185,10 @@ docker run --rm --gpus all civilization-spark
 | `CIV_LLAMA_MODEL` | GGUF 模型路径 | `models/Spark-X2.5-4B-Q4_K_M.gguf` |
 | `CIV_N_CTX` | 每个 Agent 的上下文长度 | `512`（6 GB 显存） |
 | `CIV_N_GPU_LAYERS` | offload 到 GPU 的层数 | `99` |
+| `CIV_WORLD_MODE` | 翁法罗斯灵感世界机制 | `amphoreus` |
+| `CIV_SELF_TRAIN` | 开启在线状态学习与样本筛选 | `1` |
+| `CIV_TRAINING_MIN_SCORE` | 训练样本最低接受分 | `0.62` |
+| `CIV_TRAINING_EXPORT` | accepted 样本 JSONL 路径 | `training_data/spark.jsonl` |
 | `CIV_PG_DSN` | PostgreSQL 连接串 | `host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass` |
 | `CIV_BENCH_SEEDS` | benchmark seed 列表 | `42,43,44` |
 | `CIV_BENCH_REPEAT` | 每个 seed 重复次数 | `2` |
@@ -185,7 +207,9 @@ docker run --rm --gpus all civilization-spark
 | --- | --- |
 | 核心单元测试 | 22 项通过 |
 | 13 因子档案 / 进化测试 | 5 项通过 |
+| 记忆 / 认知 / 元认知测试 | 10 项通过 |
 | PostgreSQL CRUD + 并发 | 通过（4 连接） |
+| PostgreSQL 三区数据表 | 记忆、认知、元认知、训练样本与摘要均可查询 |
 | PostgreSQL 主从复制 | 主库写入，5433 standby 可读；standby 写入被拒绝 |
 | CUDA elementwise | 最大误差 `0` |
 | CUDA attention softmax | 最大误差 `7.45e-09` |
@@ -217,6 +241,7 @@ third_party/       llama.cpp submodule
 - [x] PostgreSQL 持久化、主从复制
 - [x] GPU 推理与 CUDA kernel 数值验证
 - [x] 多 seed benchmark
+- [x] 记忆区、认知区、计算型元认知与自我训练数据导出
 - [ ] 多 Agent 推理运行时进一步模块化
 - [ ] RDMA 双机吞吐/延迟实测
 - [ ] 自动化 benchmark 报告与图表
@@ -230,6 +255,8 @@ third_party/       llama.cpp submodule
 - [量子计算机测试](docs/QUANTUM.md)
 - [RoCEv2 测试](docs/RDMA.md)
 - [真正圆桌对话模式](docs/CONVERSATION.md)
+- [翁法罗斯灵感·再创世模式](docs/AMPHOREUS_MODE.md)
+- [自我训练与记忆/认知/意识三区](docs/SELF_TRAINING.md)
 - [贡献指南](CONTRIBUTING.zh-CN.md) · [English](CONTRIBUTING.md) · [Русский](CONTRIBUTING.ru.md)
 - [安全策略](SECURITY.md)
 

@@ -103,7 +103,9 @@ int main() {
                 }
             }
 #endif
+            sim.shutdown();
         }
     }
+    civ::SharedModelPool::shutdown_active();
     return 0;
 }

@@ -28,6 +28,11 @@ export CIV_PG_DSN="host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass
 | `quantum_samples` | 每个程序每个 bitstring 的 counts |
 | `conversations` | 一场圆桌对话的 run、议题、模式和结束时间 |
 | `conversation_messages` | 每轮开场/回应、发言者、目标 Agent 和 reply_to 链 |
+| `agent_memory` | 情景、反思、世界与传承记忆、向量、重要度、遗忘与巩固状态 |
+| `agent_cognition` | 每轮信念向量、置信度、矛盾度、不确定度与学习策略 |
+| `agent_consciousness` | 计算型元认知快照：自我模型、目标、注意、误差与完整度 |
+| `training_samples` | prompt/response、评分、反馈、来源和 accepted 标记 |
+| `self_training_runs` | 每个 Agent 每轮的样本数、接受数、平均分与完成状态 |
 
 Schema 由 `PostgresStore::migrate()` 幂等创建，不需要手动执行 SQL。
 
