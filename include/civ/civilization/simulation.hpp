@@ -11,7 +11,7 @@ namespace civ {
     class Simulation {
     public:
         static constexpr std::size_t MAX_AGENTS = 13;
-        static constexpr std::size_t MAX_ROUNDS = 7;
+        static constexpr std::size_t MAX_ROUNDS = 13;
 
         Simulation(std::uint64_t seed = 42);
         ~Simulation();
@@ -23,6 +23,7 @@ namespace civ {
         std::size_t surviving_agents() const { return active_count_; }
 
     private:
+        static constexpr std::size_t LOVE_FACTOR_INDEX = 12;
         void debate_phase();
         void roundtable_phase();
         void learning_phase();
@@ -31,6 +32,13 @@ namespace civ {
         void apply_titan_trial();
         void black_tide_tick();
         void simulate_catastrophe();
+        bool trial_cycle_complete() const noexcept {
+            return trial_cursor_ >= 13;
+        }
+        bool love_factor_alive() const noexcept {
+            return agents_[LOVE_FACTOR_INDEX] != nullptr;
+        }
+        void reset_agents_for_new_cycle();
         void print_world_state() const;
         void print_genesis_ending();
         void train_and_persist(int agent_index, const std::string& prompt,
@@ -60,6 +68,7 @@ namespace civ {
             const std::string& phase, const std::string& content);
 
         std::array<std::unique_ptr<LLMAgent>, MAX_AGENTS> agents_;
+        std::uint64_t seed_ = 0;
         std::size_t active_count_ = MAX_AGENTS;
         std::uint32_t round_ = 0;
         int n_ctx_ = 2048;
@@ -78,9 +87,16 @@ namespace civ {
         std::array<float, MAX_AGENTS> corruption_{};
         std::array<float, MAX_AGENTS> memory_{};
         std::array<int, MAX_AGENTS> titan_resonance_{};
+        std::array<int, MAX_AGENTS> cycle_titan_resonance_{};
+        std::array<int, MAX_AGENTS> titan_agent_completions_{};
+        std::size_t trial_cursor_ = 0;
         int titan_trials_completed_ = 0;
+        int total_extinctions_ = 0;
+        int cycle_champion_ = -1;
+        std::array<float, MAX_AGENTS> last_cycle_efficiency_{};
         bool self_training_enabled_ = true;
         bool export_training_ = false;
+        bool training_export_started_ = false;
         std::string training_export_path_;
         std::string conversation_topic_ = "何为生命第一因？";
         PostgresStore* store_ = nullptr;

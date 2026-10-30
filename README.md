@@ -44,6 +44,8 @@ It is not intended to replace a general-purpose chat product.
 | Capability | Implementation |
 | --- | --- |
 | 13 factor agents | Heir, Titan path, drive, simulated path, AI route, unique evolution |
+| Titan cycle | Up to 13 ordered stages per cycle; 3–5 rotating participants per stage; only cleared factors receive coreflames; extinction reopens all 13 |
+| Known asymmetry | Love and destruction know from genesis that love's death caps black tide at 99; the other 11 factors learn only through dialogue |
 | Shared inference | `SharedModelPool` + multi-sequence batch decode + KV sliding window |
 | 13 learning routes | Consensus, constrained RL, replay, evolution strategies, adversarial, distillation, reward, critique, regularization, competition, pruning, exploration, meta-learning |
 | Compressed messaging | KFL-M v4, CRC8 / CRC32C, TCP / SHM / RoCEv2 interfaces |
@@ -201,6 +203,7 @@ docker run --rm --gpus all civilization-spark
 | `CIV_N_CTX` | Context length per agent | `512` for 6 GB VRAM |
 | `CIV_N_GPU_LAYERS` | Layers offloaded to GPU | `99` |
 | `CIV_WORLD_MODE` | Amphoreus-inspired world layer | `amphoreus` |
+| `CIV_MAX_ROUNDS` | Maximum simulated rounds | `13` (one full Titan cycle) |
 | `CIV_SELF_TRAIN` | Enable online state learning and sample filtering | `1` |
 | `CIV_TRAINING_MIN_SCORE` | Minimum accepted self-training score | `0.62` |
 | `CIV_TRAINING_EXPORT` | Accepted-sample JSONL path | `training_data/spark.jsonl` |

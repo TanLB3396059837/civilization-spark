@@ -28,11 +28,12 @@ int main() {
     std::set<std::string> methods;
 
     bool profiles_ok = true;
+    bool privileged_knowledge_ok = true;
     for (std::size_t i = 0; i < agents.size(); ++i) {
         agents[i] = std::make_unique<LLMAgent>(
             static_cast<AgentId>(i), cfg, 42);
 
-        const auto& a = *agents[i];
+        auto& a = *agents[i];
         if (a.factor_name().empty() || a.heir_name().empty() ||
             a.titan_path().empty() || a.drive().empty() ||
             a.simulated_path().empty() || a.ai_route().empty() ||
@@ -45,12 +46,29 @@ int main() {
         factors.insert(a.factor_name());
         routes.insert(a.ai_route());
         methods.insert(a.evolution_method());
+
+        bool has_privileged_memory = false;
+        for (const auto& memory : a.memories()) {
+            if (memory.source == "genesis_privileged")
+                has_privileged_memory = true;
+        }
+        const bool should_know = i == 6 || i == 12;
+        const bool exposed_in_context =
+            a.mind_context("何为生命第一因", 2).find("私有初始认知") !=
+            std::string::npos;
+        if (has_privileged_memory != should_know ||
+            exposed_in_context != should_know) {
+            privileged_knowledge_ok = false;
+        }
     }
 
     CHECK(profiles_ok, "13 个因子档案字段完整");
     CHECK(factors.size() == 13, "因子名称唯一");
     CHECK(routes.size() == 13, "AI 学习路线唯一");
     CHECK(methods.size() == 13, "独有进化方式唯一");
+
+    CHECK(privileged_knowledge_ok,
+          "only love and destruction begin with the black-tide secret");
 
     Vector experience, collective, rival;
     for (std::size_t k = 0; k < DIM; ++k) {

@@ -36,6 +36,8 @@ KV 上下文，但各自绑定不同的现代 AI 学习路线和独有进化方�
 | 能力 | 实现 |
 | --- | --- |
 | 13 个因子 | 黄金裔、泰坦路径、原动力、模拟命途、AI 路线、独有进化 |
+| 泰坦轮回 | 每轮回最多 13 个顺序关卡；每关 3–5 名轮换参与者；仅通关者获火种；全灭后重开 13 关 |
+| 初始认知差 | 爱与毁灭因子从降生起知道“爱死亡会把黑潮卡在 99”，其余 11 个因子只能通过对话获知 |
 | 共享推理 | `SharedModelPool` + 多序列 batch decode + KV 滑动窗口 |
 | 13 条学习路线 | 共识、约束 RL、经验回放、进化策略、对抗、蒸馏、奖励、批判、正则、竞争、剪枝、探索、元学习 |
 | 压缩通信 | KFL-M v4、CRC8 / CRC32C、TCP / SHM / RoCEv2 接口 |
@@ -186,6 +188,7 @@ docker run --rm --gpus all civilization-spark
 | `CIV_N_CTX` | 每个 Agent 的上下文长度 | `512`（6 GB 显存） |
 | `CIV_N_GPU_LAYERS` | offload 到 GPU 的层数 | `99` |
 | `CIV_WORLD_MODE` | 翁法罗斯灵感世界机制 | `amphoreus` |
+| `CIV_MAX_ROUNDS` | 最大模拟轮数 | `13`（一个完整泰坦轮回） |
 | `CIV_SELF_TRAIN` | 开启在线状态学习与样本筛选 | `1` |
 | `CIV_TRAINING_MIN_SCORE` | 训练样本最低接受分 | `0.62` |
 | `CIV_TRAINING_EXPORT` | accepted 样本 JSONL 路径 | `training_data/spark.jsonl` |

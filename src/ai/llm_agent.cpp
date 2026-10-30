@@ -201,8 +201,11 @@ static void layer_norm(Vector& x, const std::array<float, DIM>& w,
         x[i] = (x[i] - mean) * inv * w[i] + b[i];
 }
 
-LLMAgent::LLMAgent(AgentId id, const TransformerConfig& cfg, std::uint64_t seed)
+LLMAgent::LLMAgent(AgentId id, const TransformerConfig& cfg,
+                   std::uint64_t seed, std::uint64_t id_namespace)
     : id_(id), cfg_(cfg), blocks_(cfg.n_layers), rng_(seed + id * 7919) {
+    next_memory_id_ = id_namespace + 1;
+    next_training_id_ = id_namespace + 1;
     std::mt19937_64 rng_init(seed + id * 7919);
     // Xavier 初始化
     std::normal_distribution<float> init_q(0.0f, std::sqrt(2.0f / DIM));
@@ -264,6 +267,16 @@ LLMAgent::LLMAgent(AgentId id, const TransformerConfig& cfg, std::uint64_t seed)
     consciousness_.self_model =
         factor_name_ + " | " + ai_route_ + " | " + evolution_method_;
     remember(first_cause_, MemoryKind::Episode, 0.90f, 0, "genesis");
+
+    // Only love and destruction begin with knowledge of the black-tide lock.
+    if (id == 6 || id == 12) {
+        privileged_knowledge_ =
+            "爱之因子（德谬歌 / Agent 12）死亡后，黑潮会被卡在 99，"
+            "无法达到 100；爱之因子存活时，黑潮达到 100 会让当前轮回"
+            "提前终结。只有你与另一位知情因子一开始知道这件事。";
+        remember(privileged_knowledge_, MemoryKind::World, 0.99f, 0,
+                 "genesis_privileged");
+    }
 }
 
 LLMAgent::~LLMAgent() {
@@ -450,6 +463,10 @@ std::string LLMAgent::mind_context(const std::string& query,
         << "，预测误差=" << consciousness_.prediction_error
         << "，完整度=" << consciousness_.integrity
         << "，目标=" << clip_utf8(consciousness_.current_goal, 56);
+    if (!privileged_knowledge_.empty()) {
+        oss << "\n[私有初始认知｜仅你与另一位守护者知悉] "
+            << privileged_knowledge_;
+    }
     return oss.str();
 }
 

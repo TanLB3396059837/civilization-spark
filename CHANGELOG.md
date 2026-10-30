@@ -1,5 +1,35 @@
 # Changelog
 
+## v3.3.11 - 2026-10-30
+
+### Changed
+
+- Each re-creation cycle now advances through the fixed 13-Titan order one
+  stage per round instead of rerunning every Titan in every round.
+- A stage selects only 3–5 living factors. Path-resonant factors are selected
+  first and rotation fills the remaining places.
+- Cleared stages never repeat within the same cycle. Only factors that actually
+  clear a stage receive that Titan's coreflame reward.
+- Completing all 13 stages triggers total extinction and creates a new cycle
+  with all 13 stages available again.
+- Black tide reaching 100 remains an intentional early terminal condition.
+  While the love factor is dead, black tide is capped at 99 and cannot trigger
+  that early termination.
+- Love and destruction are the only factors initialized with knowledge of that
+  black-tide lock. The other 11 factors do not receive it in their initial
+  memory or model context; disclosure can only happen through dialogue.
+- New events include `titan_trial_result`, `titan_trial_failed`,
+  `coreflame_reward`, `total_extinction`, and `trial_cycle_progress`.
+
+### Fixed
+
+- Re-creating agents now use cycle-namespaced local IDs, avoiding PostgreSQL
+  uniqueness conflicts and preserving prior training exports.
+- The Windows simulation lifetime test no longer touches the shared model pool
+  after the simulation has released its agents.
+- Re-creation state is reset explicitly to `0/13`, with
+  `all_agents_died=true` and `next_trials=13` recorded in PostgreSQL.
+
 ## v3.3.10 - 2026-10-30
 
 ### Changed

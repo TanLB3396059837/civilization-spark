@@ -32,17 +32,6 @@ std::string titan_trial_list() {
     return oss.str();
 }
 
-std::string titan_trial_json() {
-    std::ostringstream oss;
-    oss << '[';
-    for (std::size_t i = 0; i < kTitanTrials.size(); ++i) {
-        if (i) oss << ',';
-        oss << '"' << kTitanTrials[i] << '"';
-    }
-    oss << ']';
-    return oss.str();
-}
-
 bool titan_resonates(std::string_view path, std::string_view trial) {
     return path == trial ||
            ((trial == "全世" || trial == "岁月") &&
@@ -157,6 +146,7 @@ std::string utf8_safe(const std::string& text) {
 } // namespace
 
 Simulation::Simulation(std::uint64_t seed) {
+    seed_ = seed;
     if (const char* mode = std::getenv("CIV_DEBATE_MODE")) {
         roundtable_mode_ = (std::string(mode) == "roundtable");
     }
@@ -200,14 +190,7 @@ Simulation::Simulation(std::uint64_t seed) {
         SharedModelPool::instance().load(model_path, n_ctx_, n_gpu_layers);
     }
 
-    TransformerConfig cfg;
-    for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
-        agents_[i] = std::make_unique<LLMAgent>(
-            static_cast<AgentId>(i), cfg, seed);
-        coreflame_[i] = 1.0f;
-        corruption_[i] = 0.0f;
-        memory_[i] = 0.0f;
-    }
+    reset_agents_for_new_cycle();
 
 #ifdef CIV_HAS_POSTGRES
     const char* dsn = std::getenv("CIV_PG_DSN");
@@ -511,16 +494,38 @@ void Simulation::persist_all_minds(int round_no) {
     }
 }
 
+void Simulation::reset_agents_for_new_cycle() {
+    TransformerConfig cfg;
+    for (auto& agent : agents_)
+        agent.reset();
+    for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
+        agents_[i] = std::make_unique<LLMAgent>(
+            static_cast<AgentId>(i), cfg,
+            seed_ + static_cast<std::uint64_t>(cycle_) * 1000003ULL,
+            static_cast<std::uint64_t>(cycle_) * 1000000ULL);
+        coreflame_[i] = 1.0f;
+        corruption_[i] = 0.0f;
+        memory_[i] = 0.0f;
+    }
+    active_count_ = MAX_AGENTS;
+    trial_cursor_ = 0;
+    current_trial_ = "尚未开始";
+    titan_resonance_.fill(0);
+    cycle_titan_resonance_.fill(0);
+    titan_agent_completions_.fill(0);
+}
+
 void Simulation::export_self_training() {
     if (!export_training_) return;
     std::size_t written = 0;
-    bool append = false;
+    bool append = training_export_started_;
     for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
         if (!agents_[i]) continue;
         written += agents_[i]->export_training_jsonl(
             training_export_path_, run_id_, append);
         append = true;
     }
+    training_export_started_ = true;
     std::cout << "[自我训练导出] " << training_export_path_
               << " | accepted samples=" << written << std::endl;
     persist_event(
@@ -575,85 +580,188 @@ AgentId Simulation::weakest_agent() const {
 }
 
 void Simulation::apply_titan_trial() {
-    current_trial_ = "全部泰坦";
-    const std::string trials = titan_trial_list();
-    titan_trials_completed_ +=
-        static_cast<int>(kTitanTrials.size());
+    if (trial_cycle_complete()) return;
+
+    const std::size_t stage = trial_cursor_;
+    current_trial_ = std::string(kTitanTrials[stage]);
     titan_resonance_.fill(0);
 
-    std::cout << "[泰坦试炼] 本轮执行全部 13 泰坦："
-              << trials << std::endl;
-    persist_event(
-        static_cast<int>(round_), -1, "titan_trial",
-        "{\"mode\":\"all\",\"count\":13,\"trials\":" +
-            titan_trial_json() + "}");
+    std::vector<AgentId> alive;
+    for (std::size_t i = 0; i < MAX_AGENTS; ++i)
+        if (agents_[i]) alive.push_back(static_cast<AgentId>(i));
+    if (alive.empty()) return;
 
-    std::vector<int> trial_resonances(kTitanTrials.size(), 0);
-    int alive_count = 0;
+    std::array<bool, MAX_AGENTS> selected{};
+    std::vector<AgentId> participants;
+    const std::size_t target_participants =
+        std::min(alive.size(), std::size_t{3} + stage % 3);
+    bool has_resonant_participant = false;
+
     for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
-        if (!agents_[i]) continue;
-        ++alive_count;
-        const std::string& path = agents_[i]->titan_path();
-        std::string resonant_paths_json = "[";
-        int resonance_count = 0;
-        for (std::size_t t = 0; t < kTitanTrials.size(); ++t) {
-            const std::string_view trial = kTitanTrials[t];
-            if (!titan_resonates(path, trial)) continue;
-            if (resonance_count > 0) resonant_paths_json += ',';
-            resonant_paths_json += "\"" + json_escape(std::string(trial)) + "\"";
-            ++trial_resonances[t];
-            ++resonance_count;
+        if (agents_[i] &&
+            titan_resonates(agents_[i]->titan_path(), current_trial_)) {
+            titan_resonance_[i] = 1;
+            ++cycle_titan_resonance_[i];
+            selected[i] = true;
+            participants.push_back(static_cast<AgentId>(i));
+            has_resonant_participant = true;
         }
-        resonant_paths_json += ']';
-
-        titan_resonance_[i] = resonance_count;
-        agents_[i]->update_efficiency(
-            0.01f + 0.005f * static_cast<float>(resonance_count));
-        coreflame_[i] = std::min(
-            1.5f, coreflame_[i] +
-                      0.02f + 0.005f * static_cast<float>(resonance_count));
-        memory_[i] = std::min(
-            1.0f, memory_[i] +
-                      0.03f + 0.01f * static_cast<float>(resonance_count));
-        agents_[i]->remember(
-            "Completed all 13 Titan trials; path " + path +
-                " resonated with " + std::to_string(resonance_count) +
-                " trial(s): " + resonant_paths_json,
-            MemoryKind::World,
-            0.58f + 0.04f * static_cast<float>(resonance_count),
-            static_cast<int>(round_), "titan_gauntlet");
-
-        persist_event(
-            static_cast<int>(round_), static_cast<int>(i),
-            "titan_gauntlet_result",
-            "{\"factor\":\"" +
-                json_escape(agents_[i]->factor_name()) +
-                "\",\"trials_tested\":13,\"resonances\":" +
-                std::to_string(resonance_count) +
-                ",\"resonant_trials\":" + resonant_paths_json + "}");
-        persist_metric(
-            static_cast<int>(round_), static_cast<int>(i),
-            "titan_trials_completed",
-            static_cast<double>(kTitanTrials.size()), "trials");
-        persist_metric(
-            static_cast<int>(round_), static_cast<int>(i),
-            "titan_resonance_count",
-            static_cast<double>(resonance_count), "trials");
     }
 
-    for (std::size_t t = 0; t < kTitanTrials.size(); ++t) {
+    if (!has_resonant_participant) {
+        const AgentId strongest = strongest_agent();
+        if (!selected[strongest]) {
+            selected[strongest] = true;
+            participants.push_back(strongest);
+        }
+    }
+
+    const std::size_t rotation = (stage * 3) % alive.size();
+    for (std::size_t n = 0;
+         n < alive.size() && participants.size() < target_participants; ++n) {
+        const AgentId id = alive[(rotation + n) % alive.size()];
+        if (selected[id]) continue;
+        selected[id] = true;
+        participants.push_back(id);
+    }
+    std::sort(participants.begin(), participants.end());
+
+    std::cout << "[泰坦关卡 " << trial_cursor_ + 1 << "/13] "
+              << current_trial_ << " | 参与者 " << participants.size()
+              << "/" << alive.size() << " | ";
+    for (std::size_t i = 0; i < participants.size(); ++i) {
+        if (i) std::cout << ',';
+        std::cout << participants[i];
+    }
+    std::cout << std::endl;
+
+    std::ostringstream participant_json;
+    participant_json << '[';
+    for (std::size_t i = 0; i < participants.size(); ++i) {
+        if (i) participant_json << ',';
+        participant_json << participants[i];
+    }
+    participant_json << ']';
+    persist_event(
+        static_cast<int>(round_), -1, "titan_trial",
+        "{\"mode\":\"stage\",\"cycle\":" +
+            std::to_string(cycle_ + 1) + ",\"stage\":" +
+            std::to_string(trial_cursor_ + 1) +
+            ",\"total_stages\":13,\"trial\":\"" +
+            json_escape(current_trial_) +
+            "\",\"participants\":" + participant_json.str() + "}");
+
+    bool stage_cleared = false;
+    std::ostringstream cleared_agents_json;
+    cleared_agents_json << '[';
+    bool first_cleared = true;
+    for (AgentId id : participants) {
+        const std::size_t i = static_cast<std::size_t>(id);
+        const bool resonant = titan_resonance_[i] > 0;
+        const float challenge_score =
+            agents_[i]->efficiency() * 0.60f +
+            agents_[i]->cognition().confidence * 0.20f +
+            agents_[i]->cognition().coherence * 0.15f +
+            agents_[i]->consciousness().integrity * 0.05f +
+            (resonant ? 0.40f : 0.0f);
+        const float threshold =
+            1.00f + 0.005f * static_cast<float>(stage);
+        const bool cleared = challenge_score >= threshold;
+        const float reward = cleared ? (resonant ? 0.12f : 0.07f) : 0.0f;
+
+        if (cleared) {
+            stage_cleared = true;
+            ++titan_agent_completions_[i];
+            coreflame_[i] = std::min(1.5f, coreflame_[i] + reward);
+            memory_[i] = std::min(1.0f, memory_[i] + 0.05f);
+            if (!first_cleared) cleared_agents_json << ',';
+            first_cleared = false;
+            cleared_agents_json << i;
+        }
+        agents_[i]->update_efficiency(
+            cleared ? (resonant ? 0.04f : 0.02f) : -0.01f);
+        agents_[i]->remember(
+            std::string(cleared ? "Cleared" : "Failed") +
+                " Titan stage " + std::to_string(trial_cursor_ + 1) +
+                "/13 (" + current_trial_ + "); path " +
+                agents_[i]->titan_path() +
+                (resonant ? "; path resonance active" : ""),
+            MemoryKind::World, cleared ? (resonant ? 0.80f : 0.66f) : 0.50f,
+            static_cast<int>(round_),
+            cleared ? "titan_stage_clear" : "titan_stage_failed");
+
+        persist_event(
+            static_cast<int>(round_), static_cast<int>(i),
+            "titan_trial_result",
+            "{\"cycle\":" + std::to_string(cycle_ + 1) +
+                ",\"stage\":" + std::to_string(trial_cursor_ + 1) +
+                ",\"trial\":\"" + json_escape(current_trial_) +
+                "\",\"participated\":true,\"cleared\":" +
+                (cleared ? "true" : "false") +
+                ",\"resonant\":" +
+                (resonant ? "true" : "false") +
+                ",\"challenge_score\":" +
+                std::to_string(challenge_score) +
+                ",\"cycle_resonance\":" +
+                std::to_string(cycle_titan_resonance_[i]) + "}");
+        persist_metric(
+            static_cast<int>(round_), static_cast<int>(i),
+            "titan_trial_score",
+            challenge_score, "score");
+        if (cleared) {
+            persist_event(
+                static_cast<int>(round_), static_cast<int>(i),
+                "coreflame_reward",
+                "{\"trial\":\"" + json_escape(current_trial_) +
+                    "\",\"stage\":" +
+                    std::to_string(trial_cursor_ + 1) +
+                    ",\"amount\":" + std::to_string(reward) +
+                    ",\"total\":" + std::to_string(coreflame_[i]) +
+                    ",\"resonant\":" +
+                    (resonant ? "true" : "false") + "}");
+            persist_metric(
+                static_cast<int>(round_), static_cast<int>(i),
+                "titan_agent_completions",
+                static_cast<double>(titan_agent_completions_[i]), "trials");
+            persist_metric(
+                static_cast<int>(round_), static_cast<int>(i),
+                "coreflame", coreflame_[i], "flame");
+        }
+    }
+    cleared_agents_json << ']';
+
+    if (stage_cleared) {
+        ++trial_cursor_;
+        ++titan_trials_completed_;
+        std::cout << "  [关卡通过] " << current_trial_
+                  << " -> 进度 " << trial_cursor_ << "/13" << std::endl;
         persist_event(
             static_cast<int>(round_), -1, "titan_trial_completed",
-            "{\"trial\":\"" +
-                json_escape(std::string(kTitanTrials[t])) +
-                "\",\"participants\":" + std::to_string(alive_count) +
-                ",\"resonances\":" +
-                std::to_string(trial_resonances[t]) + "}");
+            "{\"cycle\":" + std::to_string(cycle_ + 1) +
+                ",\"stage\":" + std::to_string(trial_cursor_) +
+                ",\"total_stages\":13,\"trial\":\"" +
+                json_escape(current_trial_) +
+                "\",\"participants\":" + participant_json.str() +
+                ",\"cleared_agents\":" + cleared_agents_json.str() + "}");
+    } else {
+        std::cout << "  [关卡失败] 本轮无人通关，下一轮重试"
+                  << std::endl;
+        persist_event(
+            static_cast<int>(round_), -1, "titan_trial_failed",
+            "{\"cycle\":" + std::to_string(cycle_ + 1) +
+                ",\"stage\":" + std::to_string(trial_cursor_ + 1) +
+                ",\"trial\":\"" + json_escape(current_trial_) +
+                "\",\"retry_required\":true,\"participants\":" +
+                participant_json.str() + "}");
     }
     persist_metric(static_cast<int>(round_), -1,
                    "titan_trials_completed",
-                   static_cast<double>(kTitanTrials.size()), "trials");
-    world_memory_ = std::min(1.0f, world_memory_ + 0.02f);
+                   static_cast<double>(trial_cursor_), "trials");
+    persist_metric(static_cast<int>(round_), -1,
+                   "titan_cycle_progress",
+                   static_cast<double>(trial_cursor_) / 13.0, "ratio");
+    world_memory_ = std::min(
+        1.0f, world_memory_ + (stage_cleared ? 0.01f : 0.003f));
 }
 
 void Simulation::black_tide_tick() {
@@ -680,6 +788,8 @@ void Simulation::black_tide_tick() {
         avg_corruption * 5.0f - avg_memory * 2.0f;
     black_tide_ = std::clamp(black_tide_ + std::max(0.5f, tide_gain),
                              0.0f, 100.0f);
+    if (!love_factor_alive())
+        black_tide_ = std::min(black_tide_, 99.0f);
 
     for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
         if (!agents_[i]) continue;
@@ -715,7 +825,9 @@ void Simulation::black_tide_tick() {
 }
 
 void Simulation::simulate_catastrophe() {
-    if (!world_mode_) return;
+    if (!world_mode_ ||
+        (!trial_cycle_complete() && black_tide_ < 100.0f))
+        return;
 
     std::vector<AgentId> alive;
     for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
@@ -724,10 +836,10 @@ void Simulation::simulate_catastrophe() {
     if (alive.empty()) return;
 
     AgentId narrator = strongest_agent();
-    int best_resonance = titan_resonance_[narrator];
+    int best_resonance = cycle_titan_resonance_[narrator];
     for (AgentId id : alive) {
-        if (titan_resonance_[id] > best_resonance) {
-            best_resonance = titan_resonance_[id];
+        if (cycle_titan_resonance_[id] > best_resonance) {
+            best_resonance = cycle_titan_resonance_[id];
             narrator = id;
         }
     }
@@ -757,16 +869,20 @@ void Simulation::simulate_catastrophe() {
         "请以角色视角描述这一轮世界毁灭的具体形式。"
         "只输出两句话，不要解释规则、不要标题、不要提示词。";
     const std::string user =
-        "泰坦试炼：全部 13 泰坦（" + titan_trial_list() + "）" +
+        "泰坦试炼：当前进度 " + std::to_string(trial_cursor_) +
+        "/13（顺序：" + titan_trial_list() + "）" +
         "；黑潮：" + std::to_string(static_cast<int>(black_tide_)) +
         "/100；稳定：" + std::to_string(static_cast<int>(stability_)) +
         "。请描述世界此刻如何毁灭，并留下一个仍然存在的火种意象。";
+    const std::string internal_user =
+        user + "\n[内部状态：记忆区/认知区/意识区]\n" +
+        agents_[narrator]->mind_context(user, 2);
 
     bool catastrophe_from_model = false;
     if (SharedModelPool::available()) {
         agents_[narrator]->reset_dialogue_context();
         const std::string generated = utf8_safe(
-            agents_[narrator]->generate_chat(system, user, 64));
+            agents_[narrator]->generate_chat(system, internal_user, 64));
         if (usable_catastrophe(generated)) {
             catastrophe = generated;
             catastrophe_from_model = true;
@@ -787,6 +903,8 @@ void Simulation::simulate_catastrophe() {
     black_tide_ = std::clamp(
         black_tide_ + 2.0f + last_catastrophe_severity_ * 6.0f,
         0.0f, 100.0f);
+    if (!love_factor_alive())
+        black_tide_ = std::min(black_tide_, 99.0f);
     stability_ = std::clamp(
         stability_ - last_catastrophe_severity_ * 5.0f, 0.0f, 100.0f);
     memory_[narrator] = std::min(1.0f, memory_[narrator] + 0.05f);
@@ -796,7 +914,8 @@ void Simulation::simulate_catastrophe() {
         catastrophe_from_model ? "world_catastrophe_llm"
                                : "world_catastrophe_fallback";
     train_and_persist(
-        static_cast<int>(narrator), user, catastrophe,
+        static_cast<int>(narrator), system + "\n" + internal_user,
+        catastrophe,
         catastrophe_source, catastrophe_from_model ? 0.72f : 0.35f);
     for (AgentId id : alive) {
         agents_[id]->remember(
@@ -815,7 +934,7 @@ void Simulation::simulate_catastrophe() {
         "{\"trial\":\"" + json_escape(current_trial_) +
             "\",\"narrator\":" + std::to_string(narrator) +
             ",\"titan_resonance\":" +
-            std::to_string(titan_resonance_[narrator]) +
+            std::to_string(cycle_titan_resonance_[narrator]) +
             ",\"severity\":" + std::to_string(last_catastrophe_severity_) +
             ",\"source\":\"" +
             (catastrophe_from_model ? "llm" : "fallback") + "\"" +
@@ -835,10 +954,10 @@ void Simulation::print_world_state() const {
         corruption_total += corruption_[i];
         ++alive_count;
     }
-    std::cout << "[世界状态] 第 " << cycle_ << " 次再创世"
+    std::cout << "[世界状态] 第 " << (cycle_ + 1) << " 轮回"
               << " | 泰坦试炼：" << current_trial_
-              << "（覆盖率 13/13，累计 " << titan_trials_completed_
-              << " 场）"
+              << "（本轮回 " << trial_cursor_ << "/13，累计通关 "
+              << titan_trials_completed_ << " 场）"
               << " | 黑潮 " << std::fixed << std::setprecision(1)
               << black_tide_ << "/100"
               << " | 稳定 " << stability_
@@ -855,7 +974,12 @@ void Simulation::print_genesis_ending() {
     if (!world_mode_) return;
 
     std::string ending;
-    if (black_tide_ >= 80.0f) {
+    const bool next_cycle_started =
+        total_extinctions_ > 0 && trial_cursor_ == 0 &&
+        active_count_ == MAX_AGENTS;
+    if (next_cycle_started) {
+        ending = "再创世完成：旧世界全员阵亡，新轮回已开启，13 泰坦试炼重置";
+    } else if (black_tide_ >= 80.0f) {
         ending = "黑潮吞世：世界未能完成再创世";
     } else if (agents_[12] && stability_ >= 65.0f &&
                world_memory_ >= 0.55f) {
@@ -880,6 +1004,11 @@ void Simulation::print_genesis_ending() {
     persist_event(static_cast<int>(round_), -1, "world_ending",
                   "{\"ending\":\"" + json_escape(ending) +
                       "\",\"black_tide\":" + std::to_string(black_tide_) +
+                      ",\"cycle\":" + std::to_string(cycle_ + 1) +
+                      ",\"all_agents_died\":" +
+                      (next_cycle_started ? "true" : "false") +
+                      ",\"next_trials\":" +
+                      (next_cycle_started ? "13" : "0") +
                       ",\"stability\":" + std::to_string(stability_) +
                       ",\"world_memory\":" + std::to_string(world_memory_) +
                       "}");
@@ -891,7 +1020,7 @@ void Simulation::print_genesis_ending() {
 
 void Simulation::run_full_simulation() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
-    std::cout << "  文明火种 v3.3.10 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
+    std::cout << "  文明火种 v3.3.11 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
     std::cout << "  真FFN + KV滑动窗口 + 活跃集调度" << std::endl;
     if (world_mode_)
         std::cout << "  翁法罗斯灵感模式：泰坦试炼 × 火种传承 × 黑潮 × 再创世"
@@ -941,10 +1070,39 @@ void Simulation::run_full_simulation() {
         else
             debate_phase();
         learning_phase();
-        if (world_mode_) black_tide_tick();
-        if (world_mode_) simulate_catastrophe();
-        elimination_phase();
-        rebirth_phase();
+        const bool cycle_complete =
+            !world_mode_ || trial_cycle_complete();
+        bool tide_extinction = false;
+        if (world_mode_) {
+            black_tide_tick();
+            tide_extinction = black_tide_ >= 100.0f && !cycle_complete;
+            if (!cycle_complete && !tide_extinction) {
+                std::cout << "[轮回推进] 当前泰坦关卡进度 "
+                          << trial_cursor_ << "/13，尚未触发世界毁灭。"
+                          << std::endl;
+                persist_event(
+                    static_cast<int>(round_), -1, "trial_cycle_progress",
+                    "{\"cycle\":" + std::to_string(cycle_ + 1) +
+                        ",\"completed\":" +
+                        std::to_string(trial_cursor_) +
+                        ",\"total\":13}");
+                persist_metric(
+                    static_cast<int>(round_), -1,
+                    "trial_cycle_progress",
+                    static_cast<double>(trial_cursor_) / 13.0, "ratio");
+            }
+        }
+        if (cycle_complete) {
+            if (world_mode_) simulate_catastrophe();
+            elimination_phase();
+            rebirth_phase();
+        } else if (tide_extinction) {
+            std::cout << "[黑潮全灭] 黑潮达到 100，当前轮回提前终止，"
+                         "全部因子阵亡。"
+                      << std::endl;
+            simulate_catastrophe();
+            rebirth_phase();
+        }
         if (world_mode_) print_world_state();
         print_agents_status();
         persist_event(static_cast<int>(round_), -1, "round_end", "{}");
@@ -963,15 +1121,26 @@ void Simulation::run_full_simulation() {
             std::cout << "\n[系统] 只剩一个智能体，提前结束。\n";
             break;
         }
-        if (world_mode_ && black_tide_ >= 100.0f) break;
+        if (tide_extinction) break;
     }
 
     print_separator();
     std::cout << "\n" << std::string(70, '=') << std::endl;
-    std::cout << "  [最终结果] 文明火种持有者" << std::endl;
+    const bool has_completed_cycle =
+        world_mode_ && cycle_champion_ >= 0;
+    std::cout << (has_completed_cycle
+                      ? "  [最终结果] 上一轮回最强因子"
+                      : "  [最终结果] 文明火种持有者")
+              << std::endl;
     std::cout << std::string(70, '=') << std::endl;
 
-    AgentId winner = strongest_agent();
+    AgentId winner = has_completed_cycle
+                         ? static_cast<AgentId>(cycle_champion_)
+                         : strongest_agent();
+    const float winner_efficiency =
+        has_completed_cycle
+            ? last_cycle_efficiency_[winner]
+            : agents_[winner]->efficiency();
     std::cout << "\n  Agent " << winner << " | "
               << agents_[winner]->factor_name() << " / "
               << agents_[winner]->heir_name() << std::endl;
@@ -982,10 +1151,14 @@ void Simulation::run_full_simulation() {
     std::cout << "  独有进化：" << agents_[winner]->evolution_method() << std::endl;
     std::cout << "  生命第一因：" << agents_[winner]->express_first_cause() << std::endl;
     std::cout << "  效率评分：" << std::fixed << std::setprecision(4)
-              << agents_[winner]->efficiency() << std::endl;
+              << winner_efficiency << std::endl;
     std::cout << "  发送帧数：" << agents_[winner]->frames_sent() << std::endl;
     std::cout << "  接收帧数：" << agents_[winner]->frames_recv() << std::endl;
-    std::cout << "\n  他将带领文明开启下一轮..." << std::endl;
+    if (has_completed_cycle)
+        std::cout << "\n  全员阵亡后，新的轮回已经开启，13 个泰坦关卡全部重置。"
+                  << std::endl;
+    else
+        std::cout << "\n  他将带领文明开启下一轮..." << std::endl;
     std::cout << std::string(70, '=') << std::endl;
     persist_all_minds(static_cast<int>(round_));
     print_mind_summary();
@@ -1470,35 +1643,81 @@ void Simulation::elimination_phase() {
 
 void Simulation::rebirth_phase() {
     if (world_mode_) {
+        const bool completed_all_trials = trial_cycle_complete();
+        const bool overwhelmed_by_black_tide =
+            black_tide_ >= 100.0f;
+        if (!completed_all_trials && !overwhelmed_by_black_tide) {
+            std::cout << "[轮回推进] 第 " << (cycle_ + 1)
+                      << " 轮回尚未完成，当前进度 "
+                      << trial_cursor_ << "/13。"
+                      << std::endl;
+            return;
+        }
+
+        const std::size_t completed_stages = trial_cursor_;
+        cycle_champion_ = static_cast<int>(strongest_agent());
+        for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
+            if (!agents_[i]) continue;
+            last_cycle_efficiency_[i] = agents_[i]->efficiency();
+            agents_[i]->remember(
+                completed_all_trials
+                    ? "The reincarnation cycle ended after all 13 Titan "
+                      "trials; this incarnation fell and the next cycle "
+                      "begins with all 13 Titan stages available again."
+                    : "The black tide reached 100 before the remaining "
+                      "Titan trials; the world ended, every factor fell, "
+                      "and the next cycle begins with all 13 stages "
+                      "available again.",
+                MemoryKind::World, 0.86f,
+                static_cast<int>(round_), "total_extinction");
+            agents_[i]->consolidate_memory(static_cast<int>(round_));
+        }
+        persist_all_minds(static_cast<int>(round_));
+        export_self_training();
+
+        ++total_extinctions_;
+        for (auto& agent : agents_)
+            agent.reset();
+        active_count_ = 0;
+        persist_event(
+            static_cast<int>(round_), cycle_champion_, "total_extinction",
+            "{\"cycle\":" + std::to_string(cycle_ + 1) +
+                ",\"champion\":" + std::to_string(cycle_champion_) +
+                ",\"champion_efficiency\":" +
+                std::to_string(last_cycle_efficiency_[cycle_champion_]) +
+                ",\"extinctions\":" +
+                std::to_string(total_extinctions_) + "}");
+
         ++cycle_;
         black_tide_ = std::max(
             0.0f, black_tide_ - (4.0f + world_memory_ * 6.0f));
-        for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
-            if (!agents_[i]) continue;
-            corruption_[i] *= 0.7f;
-            coreflame_[i] = std::min(1.5f, coreflame_[i] + 0.03f);
-            memory_[i] = std::min(1.0f, memory_[i] + 0.05f);
-            agents_[i]->remember(
-                "Re-creation cycle " + std::to_string(cycle_) +
-                    " preserved the coreflame and consolidated memories",
-                MemoryKind::World, 0.62f,
-                static_cast<int>(round_), "re_creation");
-            agents_[i]->consolidate_memory(static_cast<int>(round_));
-        }
         world_memory_ = std::min(1.0f, world_memory_ + 0.02f);
         stability_ = std::clamp(
             100.0f - black_tide_ + world_memory_ * 15.0f,
             0.0f, 100.0f);
+        reset_agents_for_new_cycle();
         std::cout << "[再创世] 第 " << cycle_
-                  << " 次再创世完成，火种与记忆进入下一世。" << std::endl;
+                  << " 次再创世启动：全员阵亡后重新降生，"
+                     "13 个泰坦关卡全部重置。"
+                  << std::endl;
         persist_event(
             static_cast<int>(round_), -1, "re_creation",
             "{\"cycle\":" + std::to_string(cycle_) +
+                ",\"stages_completed\":" +
+                std::to_string(completed_stages) +
+                ",\"termination_reason\":\"" +
+                (completed_all_trials ? "all_trials_completed"
+                                      : "black_tide_100") +
+                "\""
+                ",\"all_agents_died\":true"
+                ",\"next_trials\":13"
                 ",\"black_tide\":" + std::to_string(black_tide_) +
                 ",\"stability\":" + std::to_string(stability_) +
                 ",\"world_memory\":" + std::to_string(world_memory_) + "}");
         persist_metric(static_cast<int>(round_), -1, "re_creation_cycle",
                        static_cast<double>(cycle_), "cycle");
+        persist_metric(static_cast<int>(round_), -1, "total_extinctions",
+                       static_cast<double>(total_extinctions_), "cycles");
         persist_all_minds(static_cast<int>(round_));
         return;
     }
@@ -1535,7 +1754,8 @@ void Simulation::print_agents_status() const {
                 std::cout << " | 火种 " << std::fixed << std::setprecision(2)
                           << coreflame_[i] << " | 侵蚀 "
                           << corruption_[i] << " | 记忆 "
-                          << memory_[i];
+                          << memory_[i] << " | 本轮试炼通关 "
+                          << titan_agent_completions_[i];
             }
             std::cout << std::endl;
         }

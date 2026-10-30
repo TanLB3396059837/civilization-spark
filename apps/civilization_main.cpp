@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
             << "  CIV_N_GPU_LAYERS   offload 到 GPU 的层数（默认 CPU=0，CUDA=99）\n"
             << "  CIV_DEBATE_MODE    parallel（默认）或 roundtable 真正圆桌对话\n"
             << "  CIV_WORLD_MODE     amphoreus 开启再创世世界机制\n"
-            << "  CIV_MAX_ROUNDS     最大轮数（默认 7）\n"
+            << "  CIV_MAX_ROUNDS     最大轮数（默认 13，一个完整泰坦轮回）\n"
             << "  CIV_ROUNDTABLE_TOPIC  圆桌议题（Windows 建议用默认值）\n"
             << "  CIV_TEMPERATURE    采样温度（默认 0.75）\n"
             << "  CIV_TOP_P          nucleus 采样阈值（默认 0.9）\n"

@@ -132,7 +132,8 @@ struct MindSnapshot {
 
 class LLMAgent {
 public:
-    LLMAgent(AgentId id, const TransformerConfig& cfg, std::uint64_t seed = 0);
+    LLMAgent(AgentId id, const TransformerConfig& cfg,
+             std::uint64_t seed = 0, std::uint64_t id_namespace = 0);
     ~LLMAgent();
 
     // 内置 Transformer
@@ -239,6 +240,7 @@ private:
     std::string evolution_method_;
     EvolutionStyle evolution_style_ = EvolutionStyle::Consensus;
     std::string first_cause_;
+    std::string privileged_knowledge_;
     Vector memory_;   // 经验回放/记忆巩固
     std::uint32_t mutation_count_ = 0;
     QuantumRNG rng_;
