@@ -16,6 +16,10 @@ int main(int argc, char* argv[]) {
             << "  CIV_DEBATE_MODE    parallel（默认）或 roundtable 真正圆桌对话\n"
             << "  CIV_MAX_ROUNDS     最大轮数（默认 7）\n"
             << "  CIV_ROUNDTABLE_TOPIC  圆桌议题（Windows 建议用默认值）\n"
+            << "  CIV_TEMPERATURE    采样温度（默认 0.75）\n"
+            << "  CIV_TOP_P          nucleus 采样阈值（默认 0.9）\n"
+            << "  CIV_TOP_K          top-k 候选数（默认 40）\n"
+            << "  CIV_REPEAT_PENALTY 重复惩罚（默认 1.1）\n"
             << "  CIV_PG_DSN         PostgreSQL 连接串，例如\n"
             << "                     host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass\n";
         return 0;

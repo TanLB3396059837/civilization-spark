@@ -183,6 +183,10 @@ docker run --rm --gpus all civilization-spark
 | `CIV_PG_DSN` | PostgreSQL connection string | `host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass` |
 | `CIV_BENCH_SEEDS` | Benchmark seed list | `42,43,44` |
 | `CIV_BENCH_REPEAT` | Repeats per seed | `2` |
+| `CIV_TEMPERATURE` | Sampling temperature | `0.75` |
+| `CIV_TOP_P` | Nucleus sampling threshold | `0.9` |
+| `CIV_TOP_K` | Top-k candidates | `40` |
+| `CIV_REPEAT_PENALTY` | Repetition penalty | `1.1` |
 
 Without a GPU, unset `CIV_LLAMA_MODEL` to use the built-in CPU demonstration path.
 

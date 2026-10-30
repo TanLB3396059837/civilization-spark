@@ -572,6 +572,7 @@ void Simulation::roundtable_phase() {
         const std::string user =
             "圆桌议题：" + topic +
             "\n请用两句话给出你的立场，并明确回答：何为生命第一因？";
+        ptrs[i]->reset_dialogue_context();
         std::string text = utf8_safe(
             ptrs[i]->generate_chat(system, user, 48));
         if (!usable_reply(text))
@@ -605,8 +606,18 @@ void Simulation::roundtable_phase() {
     // Rebuttal pass: each agent must answer someone else after reading the room.
     std::vector<Line> rebuttals;
     for (std::size_t i = 0; i < ptrs.size(); ++i) {
-        const std::size_t target_idx =
+        static constexpr int kOpponents[13] = {
+            6, 5, 10, 4, 3, 1, 0, 12, 11, 1, 2, 8, 7
+        };
+        std::size_t target_idx =
             (i == 0 ? openings.size() - 1 : i - 1);
+        const int desired = kOpponents[alive[i] % 13];
+        for (std::size_t k = 0; k < openings.size(); ++k) {
+            if (openings[k].agent == desired) {
+                target_idx = k;
+                break;
+            }
+        }
         const int target_agent = openings[target_idx].agent;
         LLMAgent* target = agents_[target_agent].get();
 
@@ -634,6 +645,7 @@ void Simulation::roundtable_phase() {
 
         std::string text;
         if (SharedModelPool::instance().is_loaded()) {
+            ptrs[i]->reset_dialogue_context();
             text = utf8_safe(ptrs[i]->generate_chat(system, prompt, 40));
         }
         if (!usable_reply(text)) {

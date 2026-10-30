@@ -170,6 +170,10 @@ docker run --rm --gpus all civilization-spark
 | `CIV_PG_DSN` | PostgreSQL 连接串 | `host=127.0.0.1 port=5432 dbname=civ user=civ password=civpass` |
 | `CIV_BENCH_SEEDS` | benchmark seed 列表 | `42,43,44` |
 | `CIV_BENCH_REPEAT` | 每个 seed 重复次数 | `2` |
+| `CIV_TEMPERATURE` | 采样温度 | `0.75` |
+| `CIV_TOP_P` | nucleus 采样阈值 | `0.9` |
+| `CIV_TOP_K` | top-k 候选数 | `40` |
+| `CIV_REPEAT_PENALTY` | 重复惩罚 | `1.1` |
 
 没有 GPU 时，取消模型环境变量即可回退到内置 CPU 演示路径。
 

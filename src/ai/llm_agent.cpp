@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <limits>
 #include <string_view>
+#include <unordered_set>
 
 #ifdef CIV_USE_LLAMA
 #include <llama.h>
@@ -144,6 +145,15 @@ LLMAgent::LLMAgent(AgentId id, const TransformerConfig& cfg, std::uint64_t seed)
 
     if (const char* nctx = std::getenv("CIV_N_CTX"))
         n_ctx_hint_ = std::atoi(nctx);
+    if (const char* value = std::getenv("CIV_TEMPERATURE"))
+        temperature_ = std::clamp(std::strtof(value, nullptr), 0.1f, 2.0f);
+    if (const char* value = std::getenv("CIV_TOP_P"))
+        top_p_ = std::clamp(std::strtof(value, nullptr), 0.1f, 1.0f);
+    if (const char* value = std::getenv("CIV_TOP_K"))
+        top_k_ = std::clamp(std::atoi(value), 0, 512);
+    if (const char* value = std::getenv("CIV_REPEAT_PENALTY"))
+        repeat_penalty_ =
+            std::clamp(std::strtof(value, nullptr), 1.0f, 2.0f);
 }
 
 LLMAgent::~LLMAgent() {
@@ -280,7 +290,7 @@ bool LLMAgent::tokenize_checked(const std::string& text,
 
     int n = llama_tokenize(vocab, text.c_str(),
                            static_cast<int>(text.size()),
-                           out_tokens.data(), n_max, true, false);
+                           out_tokens.data(), n_max, true, true);
 
     if (n == std::numeric_limits<int>::min()) return false;
     if (n < 0) {
@@ -289,7 +299,7 @@ bool LLMAgent::tokenize_checked(const std::string& text,
                            static_cast<int>(text.size()),
                            out_tokens.data(),
                            static_cast<int>(out_tokens.size()),
-                           true, false);
+                           true, true);
         if (n < 0) return false;
     }
     if (n <= 0) return false;
@@ -480,21 +490,69 @@ std::int32_t LLMAgent::sample_next_token() {
     if (state_.last_logits.size() <
         static_cast<std::size_t>(n_vocab)) return -1;
 
-    float temp = 0.8f;
-    std::vector<float> probs(n_vocab);
-    float max_logit = state_.last_logits[0];
-    for (int i = 1; i < n_vocab; ++i)
-        max_logit = std::max(max_logit, state_.last_logits[i]);
-    float sum = 0.0f;
+    std::unordered_set<std::int32_t> recent;
+    const std::size_t recent_begin =
+        state_.history.size() > 64 ? state_.history.size() - 64 : 0;
+    for (std::size_t i = recent_begin; i < state_.history.size(); ++i)
+        recent.insert(state_.history[i]);
+
+    std::vector<std::pair<float, int>> candidates;
+    candidates.reserve(static_cast<std::size_t>(n_vocab));
     for (int i = 0; i < n_vocab; ++i) {
-        probs[i] = std::exp((state_.last_logits[i] - max_logit) / temp);
+        float logit = state_.last_logits[static_cast<std::size_t>(i)];
+        if (!std::isfinite(logit)) continue;
+        if (recent.count(i)) {
+            logit = logit > 0.0f ? logit / repeat_penalty_
+                                 : logit * repeat_penalty_;
+        }
+        candidates.emplace_back(logit, i);
+    }
+    if (candidates.empty()) return -1;
+
+    int keep = top_k_ > 0
+                   ? std::min<int>(top_k_, static_cast<int>(candidates.size()))
+                   : static_cast<int>(candidates.size());
+    const auto by_logit = [](const auto& a, const auto& b) {
+        return a.first > b.first;
+    };
+    if (keep < static_cast<int>(candidates.size()))
+        std::partial_sort(candidates.begin(),
+                          candidates.begin() + keep,
+                          candidates.end(), by_logit);
+    else
+        std::sort(candidates.begin(), candidates.end(), by_logit);
+    candidates.resize(static_cast<std::size_t>(keep));
+
+    const float max_logit = candidates.front().first;
+    std::vector<float> probs(candidates.size(), 0.0f);
+    float sum = 0.0f;
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+        probs[i] = std::exp((candidates[i].first - max_logit) / temperature_);
         sum += probs[i];
     }
-    for (int i = 0; i < n_vocab; ++i) probs[i] /= sum;
+    if (!(sum > 0.0f) || !std::isfinite(sum)) return -1;
+    for (float& p : probs) p /= sum;
+
+    // Nucleus truncation, then renormalize.
+    float cumulative = 0.0f;
+    std::size_t nucleus = probs.size();
+    for (std::size_t i = 0; i < probs.size(); ++i) {
+        cumulative += probs[i];
+        if (cumulative >= top_p_) {
+            nucleus = i + 1;
+            break;
+        }
+    }
+    probs.resize(nucleus);
+    sum = 0.0f;
+    for (float p : probs) sum += p;
+    if (!(sum > 0.0f) || !std::isfinite(sum)) return -1;
+    for (float& p : probs) p /= sum;
 
     QuantumURBG urbg(rng_);
     std::discrete_distribution<int> dist(probs.begin(), probs.end());
-    std::int32_t next = static_cast<std::int32_t>(dist(urbg));
+    std::int32_t next = static_cast<std::int32_t>(
+        candidates[static_cast<std::size_t>(dist(urbg))].second);
 
     const llama_token eos = llama_vocab_eos(vocab);
     const llama_token eot = llama_vocab_eot(vocab);
@@ -587,6 +645,15 @@ std::string LLMAgent::generate_chat(const std::string& system,
         return generate(pool.format_chat(system, user), max_tokens);
     }
     return generate(user, max_tokens);
+}
+
+void LLMAgent::reset_dialogue_context() {
+    if (state_.seq_id >= 0 && SharedModelPool::instance().is_loaded()) {
+        SharedModelPool::instance().reset_sequence(state_.seq_id);
+    }
+    state_.n_past = 0;
+    state_.history.clear();
+    state_.last_logits.clear();
 }
 
 void LLMAgent::learn(const Vector& exp, float lr) {

@@ -68,6 +68,7 @@ public:
     std::string generate_chat(const std::string& system,
                               const std::string& user,
                               int max_tokens = 32);
+    void reset_dialogue_context();
     void begin_generation(const std::string& prompt, int max_tokens, int n_ctx);
     std::int32_t sample_next_token();
     void set_logits(std::vector<float>&& logits);
@@ -141,6 +142,10 @@ private:
     int  gen_remaining_ = 0;
     std::string gen_result_;
     int  n_ctx_hint_ = 2048;
+    float temperature_ = 0.75f;
+    float top_p_ = 0.9f;
+    int   top_k_ = 40;
+    float repeat_penalty_ = 1.1f;
 
     std::size_t bytes_sent_ = 0, bytes_recv_ = 0;
     std::size_t frames_sent_ = 0, frames_recv_ = 0;

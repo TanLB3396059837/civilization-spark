@@ -224,6 +224,26 @@ std::string SharedModelPool::format_chat(const std::string& system,
     const char* tmpl = llama_model_chat_template(model_, nullptr);
     if (!tmpl || !*tmpl) return system + "\n\n" + user;
 
+    const std::string template_text(tmpl);
+    const auto spark_fallback = [&]() {
+        // Spark-X2.5 uses fullwidth sentence markers and <|Role|> tokens.
+        const std::string start = "<｜start▁of▁sentence｜>";
+        const std::string end = "<｜end▁of▁sentence｜>";
+        return start + "<|System|>\n" + system + end +
+               start + "<|User|>" + user + end +
+               start + "<|Bot|></think>";
+    };
+    if (template_text.find("<|System|>") != std::string::npos &&
+        template_text.find("start") != std::string::npos) {
+        // The bundled llama_chat_apply_template does not know every Spark
+        // template; format the known Spark role markers directly.
+        const std::string start = "<｜start▁of▁sentence｜>";
+        const std::string end = "<｜end▁of▁sentence｜>";
+        return start + "<|System|>\n" + system + end +
+               start + "<|User|>" + user + end +
+               start + "<|Bot|></think>";
+    }
+
     llama_chat_message messages[] = {
         {"system", system.c_str()},
         {"user", user.c_str()},
@@ -234,13 +254,13 @@ std::string SharedModelPool::format_chat(const std::string& system,
     int n = llama_chat_apply_template(
         tmpl, messages, 2, true, buffer.data(),
         static_cast<int32_t>(buffer.size()));
-    if (n < 0) return system + "\n\n" + user;
+    if (n < 0) return spark_fallback();
     if (static_cast<std::size_t>(n) > buffer.size()) {
         buffer.resize(static_cast<std::size_t>(n) + 1);
         n = llama_chat_apply_template(
             tmpl, messages, 2, true, buffer.data(),
             static_cast<int32_t>(buffer.size()));
-        if (n < 0) return system + "\n\n" + user;
+        if (n < 0) return spark_fallback();
     }
     return std::string(buffer.data(), static_cast<std::size_t>(n));
 #else
