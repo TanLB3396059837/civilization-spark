@@ -46,6 +46,7 @@ It is not intended to replace a general-purpose chat product.
 | 13 factor agents | Heir, Titan path, drive, simulated path, AI route, unique evolution |
 | Titan cycle | Up to 13 ordered stages per cycle; 3–5 rotating participants per stage; only cleared factors receive coreflames; extinction reopens all 13 |
 | Known asymmetry | Love and destruction know from genesis that love's death caps black tide at 99; the other 11 factors learn only through dialogue |
+| Destruction judgment | Each coreflame lowers black tide by `0.2`; destruction may kill love only with consent, but may directly target any other living factor |
 | Shared inference | `SharedModelPool` + multi-sequence batch decode + KV sliding window |
 | 13 learning routes | Consensus, constrained RL, replay, evolution strategies, adversarial, distillation, reward, critique, regularization, competition, pruning, exploration, meta-learning |
 | Compressed messaging | KFL-M v4, CRC8 / CRC32C, TCP / SHM / RoCEv2 interfaces |

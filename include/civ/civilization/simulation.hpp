@@ -33,6 +33,10 @@ namespace civ {
         void apply_titan_trial();
         void black_tide_tick();
         void simulate_catastrophe();
+        void destruction_phase();
+        bool terminate_factor(AgentId target, AgentId actor,
+                              bool consent_required, bool consent_granted,
+                              const std::string& reason);
         bool trial_cycle_complete() const noexcept {
             return trial_cursor_ >= TITAN_STAGES;
         }
@@ -92,6 +96,8 @@ namespace civ {
         std::array<int, MAX_AGENTS> titan_agent_completions_{};
         std::size_t trial_cursor_ = 0;
         int titan_trials_completed_ = 0;
+        int total_coreflames_collected_ = 0;
+        int cycle_coreflames_collected_ = 0;
         int total_extinctions_ = 0;
         int cycle_champion_ = -1;
         std::array<float, MAX_AGENTS> last_cycle_efficiency_{};

@@ -34,11 +34,24 @@ export CIV_MAX_ROUNDS=13
 
 黑潮到达 `100` 会提前结束当前运行，这是设计内的失败条件，不需要强行补跑剩余关卡。爱之因子（Agent 12 / 德谬歌）死亡后，黑潮上限变为 `99`，因此不能触发 `100` 的提前终止。
 
+每次实际获得一枚泰坦火种时，黑潮立即降低 `0.2`。同一关卡允许多名因子分别通关和收集火种，因此按实际通关系数累计降低。
+
 这条机制是初始认知不对称规则：
 
 - 爱之因子（Agent 12 / 德谬歌）和毁灭因子（Agent 6 / NeiKos496）从降生起就知道“爱死亡会把黑潮卡在 99”；
 - 其余 11 个因子的初始记忆和初始模型上下文不包含这条知识；
 - 两位知情因子是否在圆桌中公开由自身策略决定；一旦公开，其他因子才可能从对话中获知。
+
+### 毁灭裁决
+
+每个世界轮，毁灭因子（Agent 6 / NeiKos496）获得一次裁决机会：
+
+- 可请求杀死爱之因子 Agent 12；只有 Agent 12 明确同意时才执行；
+- 可选择一个除爱以外的存活因子直接处决，无需该目标同意；
+- 裁决可以拒绝执行；
+- 死亡会触发火种与记忆继承，并写入 `factor_death` 与 `coreflame_transfer`。
+
+真实模型可用时，两个决定由模型对话生成；无模型回退时使用可复现的保守裁决策略。
 
 每轮还会记录：
 
@@ -136,6 +149,9 @@ events:
   titan_trial_completed
   titan_trial_failed
   coreflame_reward
+  destruction_choice
+  love_consent
+  factor_death
   world_catastrophe
   coreflame_transfer
   total_extinction
@@ -153,6 +169,8 @@ metrics:
   titan_resonance_count
   titan_agent_completions
   titan_trial_score
+  coreflames_collected_total
+  surviving_agents
   total_extinctions
   re_creation_cycle
   final_black_tide

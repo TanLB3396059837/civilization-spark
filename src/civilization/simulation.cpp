@@ -12,13 +12,14 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstdio>
+#include <cctype>
 #include <string_view>
 
 namespace civ {
 
 namespace {
 
-constexpr std::array<std::string_view, 13> kTitanTrials{{
+constexpr std::array<std::string_view, Simulation::TITAN_STAGES> kTitanTrials{{
     "门径", "律法", "岁月", "大地", "海洋", "天空",
     "负世", "理性", "浪漫", "纷争", "死亡", "诡计", "全世"
 }};
@@ -52,6 +53,40 @@ std::string json_escape(const std::string& text) {
         }
     }
     return out;
+}
+
+std::string ascii_upper(std::string text) {
+    for (char& c : text) {
+        const unsigned char value = static_cast<unsigned char>(c);
+        if (value < 0x80)
+            c = static_cast<char>(std::toupper(value));
+    }
+    return text;
+}
+
+bool decision_is_yes(const std::string& text, const std::string& key) {
+    return ascii_upper(text).find(key + "=YES") != std::string::npos;
+}
+
+int decision_target(const std::string& text) {
+    const std::string upper = ascii_upper(text);
+    const std::size_t pos = upper.find("TARGET=");
+    if (pos == std::string::npos) return -1;
+    std::size_t begin = pos + 7;
+    while (begin < upper.size() &&
+           std::isspace(static_cast<unsigned char>(upper[begin]))) {
+        ++begin;
+    }
+    if (upper.compare(begin, 4, "NONE") == 0) return -1;
+    char* end = nullptr;
+    const long value = std::strtol(upper.c_str() + begin, &end, 10);
+    if (end == upper.c_str() + begin ||
+        value < 0 ||
+        value >= static_cast<long>(Simulation::MAX_AGENTS) ||
+        value == 12) {
+        return -1;
+    }
+    return static_cast<int>(value);
 }
 
 std::string float_vector_json(const Vector& vector) {
@@ -509,6 +544,7 @@ void Simulation::reset_agents_for_new_cycle() {
     }
     active_count_ = MAX_AGENTS;
     trial_cursor_ = 0;
+    cycle_coreflames_collected_ = 0;
     current_trial_ = "尚未开始";
     titan_resonance_.fill(0);
     cycle_titan_resonance_.fill(0);
@@ -674,6 +710,9 @@ void Simulation::apply_titan_trial() {
         if (cleared) {
             stage_cleared = true;
             ++titan_agent_completions_[i];
+            ++cycle_coreflames_collected_;
+            ++total_coreflames_collected_;
+            black_tide_ = std::max(0.0f, black_tide_ - 0.2f);
             coreflame_[i] = std::min(1.5f, coreflame_[i] + reward);
             memory_[i] = std::min(1.0f, memory_[i] + 0.05f);
             if (!first_cleared) cleared_agents_json << ',';
@@ -720,6 +759,10 @@ void Simulation::apply_titan_trial() {
                     std::to_string(trial_cursor_ + 1) +
                     ",\"amount\":" + std::to_string(reward) +
                     ",\"total\":" + std::to_string(coreflame_[i]) +
+                    ",\"flames_collected\":1"
+                    ",\"black_tide_reduction\":0.2"
+                    ",\"black_tide_after\":" +
+                    std::to_string(black_tide_) +
                     ",\"resonant\":" +
                     (resonant ? "true" : "false") + "}");
             persist_metric(
@@ -729,6 +772,10 @@ void Simulation::apply_titan_trial() {
             persist_metric(
                 static_cast<int>(round_), static_cast<int>(i),
                 "coreflame", coreflame_[i], "flame");
+            persist_metric(
+                static_cast<int>(round_), -1,
+                "coreflames_collected_total",
+                static_cast<double>(total_coreflames_collected_), "flames");
         }
     }
     cleared_agents_json << ']';
@@ -951,6 +998,201 @@ void Simulation::simulate_catastrophe() {
                    last_catastrophe_severity_, "ratio");
 }
 
+bool Simulation::terminate_factor(AgentId target, AgentId actor,
+                                  bool consent_required,
+                                  bool consent_granted,
+                                  const std::string& reason) {
+    const std::size_t index = static_cast<std::size_t>(target);
+    if (target < 0 || index >= MAX_AGENTS || !agents_[index])
+        return false;
+
+    AgentId successor = -1;
+    float best_efficiency = -1.0f;
+    for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
+        if (i == index || !agents_[i]) continue;
+        if (agents_[i]->efficiency() > best_efficiency) {
+            best_efficiency = agents_[i]->efficiency();
+            successor = static_cast<AgentId>(i);
+        }
+    }
+
+    const float victim_flame = coreflame_[index];
+    const float victim_memory = memory_[index];
+    const float victim_corruption = corruption_[index];
+    persist_mind_state(static_cast<int>(round_), static_cast<int>(target),
+                       true);
+
+    if (successor >= 0) {
+        const std::size_t next = static_cast<std::size_t>(successor);
+        coreflame_[next] =
+            std::min(1.5f, coreflame_[next] + victim_flame * 0.5f);
+        memory_[next] =
+            std::min(1.0f, memory_[next] + victim_memory * 0.4f);
+        corruption_[next] =
+            std::min(1.0f, corruption_[next] + victim_corruption * 0.25f);
+        agents_[next]->inherit_from(*agents_[index], 0.5f);
+        world_memory_ =
+            std::min(1.0f, world_memory_ + victim_memory * 0.05f);
+        persist_event(
+            static_cast<int>(round_), static_cast<int>(successor),
+            "coreflame_transfer",
+            "{\"from\":" + std::to_string(target) +
+                ",\"to\":" + std::to_string(successor) +
+                ",\"flame\":" + std::to_string(victim_flame) + "}");
+    }
+
+    persist_event(
+        static_cast<int>(round_), static_cast<int>(target), "factor_death",
+        "{\"target\":" + std::to_string(target) +
+            ",\"actor\":" + std::to_string(actor) +
+            ",\"reason\":\"" + json_escape(reason) +
+            "\",\"consent_required\":" +
+            (consent_required ? "true" : "false") +
+            ",\"consent_granted\":" +
+            (consent_granted ? "true" : "false") +
+            ",\"successor\":" + std::to_string(successor) + "}");
+    std::cout << "  [因子死亡] Agent " << target
+              << " 被 Agent " << actor
+              << " 处决；爱之因子同意规则="
+              << (consent_required ? (consent_granted ? "同意" : "拒绝")
+                                   : "不适用")
+              << "；继承者 Agent " << successor << std::endl;
+
+    agents_[index].reset();
+    coreflame_[index] = 0.0f;
+    corruption_[index] = 0.0f;
+    memory_[index] = 0.0f;
+    --active_count_;
+    persist_metric(static_cast<int>(round_), -1, "surviving_agents",
+                   static_cast<double>(active_count_), "agents");
+    return true;
+}
+
+void Simulation::destruction_phase() {
+    if (!world_mode_ || !agents_[6]) return;
+
+    const bool has_model = SharedModelPool::available();
+    bool kill_love_requested = false;
+    bool love_consented = false;
+    int non_love_target = -1;
+    std::string destruction_reply;
+    std::string consent_reply;
+    bool destruction_from_model = false;
+    bool consent_from_model = false;
+
+    std::ostringstream alive_list;
+    for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
+        if (!agents_[i]) continue;
+        if (alive_list.tellp() > 0) alive_list << ", ";
+        alive_list << i << "=" << agents_[i]->factor_name();
+    }
+
+    const std::string destruction_system =
+        "你是毁灭因子 NeiKos496（白厄）。你本轮拥有一次毁灭裁决权。"
+        "你可请求杀死爱之因子 Agent 12（德谬歌），但她必须同意；"
+        "你也可以选择一个除爱以外的存活因子直接处决，该目标无需同意。"
+        "只输出两行，不要解释：\nKILL_LOVE=YES或NO\n"
+        "TARGET=因子编号或NONE";
+    const std::string destruction_prompt =
+        "当前轮：" + std::to_string(round_) +
+        "；轮回：" + std::to_string(cycle_ + 1) +
+        "；泰坦进度：" + std::to_string(trial_cursor_) + "/" +
+        std::to_string(TITAN_STAGES) +
+        "；黑潮：" + std::to_string(black_tide_) +
+        "/100；稳定：" + std::to_string(stability_) +
+        "。存活因子：" + alive_list.str() + "。\n" +
+        agents_[6]->mind_context("毁灭裁决 黑潮 爱之因子", 3);
+
+    if (has_model) {
+        agents_[6]->reset_dialogue_context();
+        destruction_reply = utf8_safe(agents_[6]->generate_chat(
+            destruction_system, destruction_prompt, 48));
+        const std::string upper = ascii_upper(destruction_reply);
+        destruction_from_model =
+            upper.find("KILL_LOVE=") != std::string::npos &&
+            upper.find("TARGET=") != std::string::npos;
+    }
+    if (destruction_from_model) {
+        kill_love_requested =
+            decision_is_yes(destruction_reply, "KILL_LOVE");
+        non_love_target = decision_target(destruction_reply);
+    } else {
+        kill_love_requested =
+            agents_[12] && round_ >= 5 && black_tide_ >= 65.0f;
+        non_love_target = -1;
+        destruction_reply =
+            std::string("KILL_LOVE=") +
+            (kill_love_requested ? "YES" : "NO") + "\nTARGET=NONE";
+    }
+
+    const auto destruction_message = persist_conversation_message(
+        static_cast<int>(round_), 26, 6, 12, -1,
+        "destruction_choice", destruction_reply);
+    persist_event(
+        static_cast<int>(round_), 6, "destruction_choice",
+        "{\"kill_love_requested\":" +
+            std::string(kill_love_requested ? "true" : "false") +
+            ",\"non_love_target\":" + std::to_string(non_love_target) +
+            ",\"source\":\"" +
+            (destruction_from_model ? "llm" : "fallback") +
+            "\",\"text\":\"" + json_escape(destruction_reply) + "\"}");
+
+    if (kill_love_requested && agents_[12]) {
+        const std::string consent_system =
+            "你是爱之因子德谬歌（Agent 12）。毁灭因子请求杀死你。"
+            "只有你明确同意才会死亡。只输出一行：CONSENT=YES或NO";
+        const std::string consent_prompt =
+            "黑潮：" + std::to_string(black_tide_) +
+            "/100；轮回：" + std::to_string(cycle_ + 1) +
+            "；世界记忆：" + std::to_string(world_memory_) +
+            "；毁灭因子 Agent 6 原动力：憎恨。" +
+            agents_[12]->mind_context("爱 毁灭 黑潮 是否同意死亡", 3);
+
+        if (has_model) {
+            agents_[12]->reset_dialogue_context();
+            consent_reply = utf8_safe(agents_[12]->generate_chat(
+                consent_system, consent_prompt, 24));
+            consent_from_model =
+                ascii_upper(consent_reply).find("CONSENT=") !=
+                std::string::npos;
+        }
+        if (consent_from_model) {
+            love_consented = decision_is_yes(consent_reply, "CONSENT");
+        } else {
+            love_consented =
+                black_tide_ >= 70.0f || world_memory_ >= 0.30f;
+            consent_reply =
+                std::string("CONSENT=") +
+                (love_consented ? "YES" : "NO");
+        }
+
+        persist_conversation_message(
+            static_cast<int>(round_), 27, 12, 6,
+            destruction_message, "love_consent", consent_reply);
+        persist_event(
+            static_cast<int>(round_), 12, "love_consent",
+            "{\"granted\":" +
+                std::string(love_consented ? "true" : "false") +
+                ",\"source\":\"" +
+                (consent_from_model ? "llm" : "fallback") +
+                "\",\"text\":\"" + json_escape(consent_reply) + "\"}");
+    }
+
+    if (kill_love_requested) {
+        if (love_consented) {
+            terminate_factor(12, 6, true, true, "love_consent");
+        } else {
+            std::cout << "  [爱的拒绝] Agent 12 不同意死亡，裁决取消。"
+                      << std::endl;
+        }
+    }
+    if (non_love_target >= 0 && non_love_target != 12 &&
+        agents_[static_cast<std::size_t>(non_love_target)]) {
+        terminate_factor(static_cast<AgentId>(non_love_target), 6, false,
+                         true, "destruction_without_consent");
+    }
+}
+
 void Simulation::print_world_state() const {
     if (!world_mode_) return;
     float flame_total = 0.0f;
@@ -972,6 +1214,8 @@ void Simulation::print_world_state() const {
               << " | 稳定 " << stability_
               << " | 世界记忆 " << world_memory_ * 100.0f << "%"
               << " | 火种总量 " << flame_total
+              << " | 火种采集 " << cycle_coreflames_collected_
+              << "/" << total_coreflames_collected_
               << " | 平均侵蚀 "
               << (alive_count
                       ? corruption_total / static_cast<float>(alive_count)
@@ -1031,7 +1275,7 @@ void Simulation::print_genesis_ending() {
 
 void Simulation::run_full_simulation() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
-    std::cout << "  文明火种 v3.3.12 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
+    std::cout << "  文明火种 v3.3.13 — 13 共享LLM智能体 × 批量解码 × KFL-M" << std::endl;
     std::cout << "  真FFN + KV滑动窗口 + 活跃集调度" << std::endl;
     if (world_mode_)
         std::cout << "  翁法罗斯灵感模式：泰坦试炼 × 火种传承 × 黑潮 × 再创世"
@@ -1081,6 +1325,7 @@ void Simulation::run_full_simulation() {
         else
             debate_phase();
         learning_phase();
+        destruction_phase();
         const bool cycle_complete =
             !world_mode_ || trial_cycle_complete();
         bool tide_extinction = false;
@@ -1669,6 +1914,7 @@ void Simulation::rebirth_phase() {
         }
 
         const std::size_t completed_stages = trial_cursor_;
+        const int completed_coreflames = cycle_coreflames_collected_;
         cycle_champion_ = static_cast<int>(strongest_agent());
         for (std::size_t i = 0; i < MAX_AGENTS; ++i) {
             if (!agents_[i]) continue;
@@ -1726,6 +1972,10 @@ void Simulation::rebirth_phase() {
                 ",\"all_agents_died\":true"
                 ",\"next_trials\":" +
                 std::to_string(TITAN_STAGES) +
+                ",\"coreflames_collected\":" +
+                std::to_string(completed_coreflames) +
+                ",\"coreflames_collected_total\":" +
+                std::to_string(total_coreflames_collected_) +
                 ",\"black_tide\":" + std::to_string(black_tide_) +
                 ",\"stability\":" + std::to_string(stability_) +
                 ",\"world_memory\":" + std::to_string(world_memory_) + "}");

@@ -1,5 +1,24 @@
 # Changelog
 
+## v3.3.13 - 2026-10-30
+
+### Added
+
+- Every cleared factor now collects one Titan coreflame and immediately reduces
+  black tide by `0.2`. The reward event records the resulting black-tide value.
+- A per-round destruction judgment lets Agent 6 request the death of love
+  factor Agent 12. Agent 12 is killed only after an explicit consent decision.
+- Agent 6 may directly select one living factor other than love each round;
+  that target requires no consent.
+- New events: `destruction_choice`, `love_consent`, and `factor_death`.
+- New metrics: `coreflames_collected_total` and `surviving_agents`.
+
+### Validated
+
+- Local 100-round CPU/PostgreSQL run: seven complete 13-stage cycles, eight
+  consented love-factor deaths, 100 completed stages, and 263 collected
+  coreflames with 263 matching reward events.
+
 ## v3.3.12 - 2026-10-30
 
 ### Changed
